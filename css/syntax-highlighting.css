@@ -1,0 +1,100 @@
+/** USE: https://flatuicolors.com/palette/se **/
+.hljs {
+  color: #444;
+}
+
+.hljs-attribute,
+.hljs-selector-tag,
+.hljs-meta-keyword,
+.hljs-doctag,
+.hljs-name {
+  font-weight: bold;
+}
+.hljs-type,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-quote,
+.hljs-template-tag,
+.hljs-deletion {
+  color: #880000;
+}
+
+.hljs-section {
+  color: #880000;
+  font-weight: bold;
+}
+.hljs-regexp,
+.hljs-symbol,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-link,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: #bc6060;
+}
+
+.hljs-bullet,
+.hljs-code,
+.hljs-addition {
+  color: #397300;
+}
+.hljs-meta {
+  color: #1f7199;
+}
+.hljs-meta-string {
+  color: #4d99bf;
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: bold;
+}
+
+/**
+ * Modified
+ */
+
+.hljs {
+  font-family: var(--code-font);
+  background-color: #dfe6e944;
+  padding: 2rem 0;
+  border-radius: 7px;
+  margin: 20px 0;
+  display: block;
+}
+
+.hljs-keyword {
+  color: #575fcf;
+  font-weight: 400;
+  font-style: italic;
+}
+
+.hljs-string {
+  color: #05c46b;
+}
+
+.hljs-title {
+  color: #ffa801;
+}
+
+.hljs-built_in {
+  color: #ff3f34;
+}
+
+.hljs-comment {
+  color: #808e9b;
+}
+
+.hljs-number {
+  color: #05c46b;
+}
+
+.hljs-literal {
+  color: #0fbcf9;
+}
+
+.hljs-subst {
+  color: #f53b57;
+  font-style: italic;
+}
