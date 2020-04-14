@@ -44,6 +44,8 @@ a {
   line-height: 2rem;
   color: var(--text-color);
   letter-spacing: 0.5px;
+  word-wrap: break-word;
+  word-break: break-word;
 }
 
 b {
@@ -52,7 +54,6 @@ b {
 
 p a {
   color: #575fcf;
-  word-wrap: break-word;
 }
 
 main {
