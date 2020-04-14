@@ -52,7 +52,7 @@ b {
 
 p a {
   color: #575fcf;
-  word-break: break-word;
+  word-wrap: break-word;
 }
 
 main {
