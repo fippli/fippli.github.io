@@ -64,6 +64,7 @@ header {
   margin: 0 auto;
   display: flex;
   flex-direction: column;
+  padding-top: 40px;
 }
 
 footer {
@@ -85,6 +86,7 @@ footer a {
 
 article {
   margin: 80px 0;
+  padding: 30px;
 }
 
 article h1 {
@@ -100,7 +102,7 @@ article h1 {
 .title {
   color: #f53b57;
   text-shadow: 7px 0px 0 #575fcf;
-  font-size: 7rem;
+  font-size: 5rem;
   text-transform: uppercase;
   font-family: var(--theme-font);
   font-weight: 900;
