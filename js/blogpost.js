@@ -14,7 +14,7 @@ window.onload = (function () {
   };
 
   const getBlogPost = (blogpost) => {
-    return fetch(getUrl(blogpost, true))
+    return fetch(getUrl(blogpost, false))
       .then((response) => response.text())
       .then((page) => {
         return page;
