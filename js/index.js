@@ -11,13 +11,6 @@ window.onload = (function () {
       date: "21 May 2020",
     },
     {
-      title: "RetryJS",
-      text:
-        "Creating a nodejs library for retrying functions when execution fails.",
-      postName: "retry-js.html",
-      date: "19 April 2020",
-    },
-    {
       title: "Initial Post",
       text:
         "Ranting about Apple's and Google's exploitation of the Corona crisis.",
