@@ -5,22 +5,36 @@ window.onload = (function () {
 
   const blogposts = [
     {
+      title: "AND",
+      text: "How should a function and() be constructed?",
+      postName: "and.md",
+      date: "21 May 2020",
+    },
+    {
+      title: "RetryJS",
+      text:
+        "Creating a nodejs library for retrying functions when execution fails.",
+      postName: "retry-js.html",
+      date: "19 April 2020",
+    },
+    {
       title: "Initial Post",
       text:
         "Ranting about Apple's and Google's exploitation of the Corona crisis.",
-      postName: "initial-post",
+      postName: "initial-post.html",
       date: "12 April 2020",
     },
   ];
 
-  const createPostLink = (postName) => `/blogpost?blogpost=${postName}`;
+  const createPostLink = (postName) =>
+    `<a href='/blogpost.html?blogpost=${postName}' class="post-link-wrapper">`;
 
   const createBlogEntry = ({ title, text, postName, date }) => {
     console.log(title, text, postName, date);
     const blogEntry = document.createElement("div");
     blogEntry.className = "blog-entry";
     blogEntry.innerHTML = `
-    <a href='${createPostLink(postName)}' class="post-link-wrapper">
+    ${createPostLink(postName)}
     <h2 class="post-title">${title} <span class="date">${date}</span></h2>
     <p>${text}</p>
     </a>

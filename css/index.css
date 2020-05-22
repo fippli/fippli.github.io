@@ -13,6 +13,7 @@ body {
   --theme-font: "Montserrat", sans-serif;
   --code-font: "Fira Code", monospace;
   --text-color: #1e272e;
+  --text-size: 1.1rem;
   margin: 0;
   padding: 0;
 }
@@ -39,7 +40,7 @@ h2 {
 p,
 a {
   font-family: var(--text-font);
-  font-size: 1.1rem;
+  font-size: var(--text-size);
   font-weight: 300;
   line-height: 2rem;
   color: var(--text-color);
@@ -49,6 +50,7 @@ a {
   word-break: break-word;
 }
 
+strong,
 b {
   font-weight: 700;
 }
@@ -94,6 +96,18 @@ article {
 
 article h1 {
   margin: 0;
+}
+
+ul {
+  font-family: var(--text-font);
+  font-size: var(--text-size);
+  list-style-type: "- ";
+  font-weight: 300;
+  color: var(--text-color);
+}
+
+ul li {
+  margin: 10px 0;
 }
 
 .title-wrapper {
@@ -190,4 +204,14 @@ article h1 {
   font-size: 1rem;
   font-weight: 600;
   width: 100%;
+}
+
+.inline-code {
+  font-family: var(--code-font);
+  background-color: #dfe6e944;
+  padding: 5px;
+  border-radius: 3px;
+  color: #ff3f34;
+  font-size: 0.9rem;
+  font-weight: 500;
 }
