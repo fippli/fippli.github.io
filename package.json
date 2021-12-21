@@ -1,11 +1,9 @@
 {
-  "name": "web",
+  "name": "fippli.se",
   "version": "0.1.0",
   "private": true,
-  "dependencies": {
-    "react": "^16.8.6",
-    "react-dom": "^16.8.6",
-    "react-scripts": "3.0.1"
+  "engines": {
+    "node": "~16"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -27,5 +25,18 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "dependencies": {
+    "@codewell/super-search": "^2.0.0",
+    "highlight.js": "^11.3.1",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2",
+    "react-router-dom": "^6.0.2",
+    "react-scripts": "^4.0.3",
+    "showdown": "^1.9.0",
+    "styled-components": "^5.3.3"
+  },
+  "devDependencies": {
+    "prettier": "^2.4.1"
   }
 }
