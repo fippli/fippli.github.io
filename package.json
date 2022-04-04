@@ -8,7 +8,7 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "BUILD_PATH='./docs' react-scripts build",
-    "postbuild": "git add -A && git commit -m 'docs: update' && git push",
+    "postbuild": "cp CNAME ./docs/CNAME && git add -A && git commit -m 'docs: update' && git push",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
