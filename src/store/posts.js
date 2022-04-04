@@ -45,4 +45,13 @@ export const posts = [
     content: "Minimalistic QR code generator.",
     repository: "https://github.com/fippli/qr",
   },
+  {
+    id: "6",
+    title: "Lilldag",
+    link: "https://fippli.se/lilldag",
+    created: 1649064597545,
+    tags: ["HTML", "CSS", "JavaScript", "Utility"],
+    content: 'Know what "lilldag" it is.',
+    repository: "https://github.com/fippli/lilldag",
+  },
 ];
