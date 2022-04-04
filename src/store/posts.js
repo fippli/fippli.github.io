@@ -36,4 +36,13 @@ export const posts = [
     content: "A little game...",
     repository: "https://github.com/fippli/plankton",
   },
+  {
+    id: "5",
+    title: "QR Code Generator",
+    link: "https://fippli.se/qr",
+    created: 1649064597545,
+    tags: ["HTML", "CSS", "JavaScript", "Utility"],
+    content: "Minimalistic QR code generator.",
+    repository: "https://github.com/fippli/qr",
+  },
 ];
