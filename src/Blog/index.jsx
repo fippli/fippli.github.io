@@ -4,6 +4,7 @@ import { Layout } from "../components/Layout.jsx";
 import styled from "styled-components";
 import { useContext } from "react";
 import AppContext from "../store/AppState.js";
+import { descending } from "./utils/descending.js";
 
 const Feed = styled.div`
   display: flex;
@@ -33,7 +34,7 @@ export const Blog = () => {
   return (
     <Layout>
       <Input placeholder="filter..." onChange={handleInput} />
-      <Feed>{blogposts.map(Blogpost)}</Feed>
+      <Feed>{blogposts.sort(descending).map(Blogpost)}</Feed>
     </Layout>
   );
 };

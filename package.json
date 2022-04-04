@@ -7,7 +7,8 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build && cp -r ./build ./docs",
+    "build": "BUILD_PATH='./docs' react-scripts build",
+    "postbuild": "git add -A && git commit -m 'docs: update' && git push",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
