@@ -8,4 +8,10 @@ export const Title = styled.h1`
   text-shadow: 10px 10px var(--blue);
   letter-spacing: 25px;
   margin: 0;
+
+  @media screen and (max-width: 768px) {
+    font-size: 5rem;
+    text-shadow: 0.05em 0.05em var(--blue);
+    letter-spacing: 16px;
+  }
 `;

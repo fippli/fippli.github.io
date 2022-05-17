@@ -21,6 +21,7 @@ const TitleWrapper = styled.h2`
 const InfoWrapper = styled.div`
   display: flex;
   width: 100%;
+  flex-wrap: wrap;
 `;
 
 const Link = styled.a`
@@ -35,9 +36,15 @@ const StyledLink = styled.a`
   color: #000000;
   width: 100%;
   text-decoration: none;
+  font-family: var(--title-font);
+
   :hover {
     color: var(--blue);
     border-bottom: 4px solid var(--blue);
+  }
+
+  @media screen and (max-width: 768px) {
+    font-size: 1.5rem;
   }
 `;
 
@@ -64,9 +71,8 @@ const InfoRow = ({ tags, created, repository }) => {
         <Link href={repository}>
           <i className="fab fa-github" />
         </Link>
+        <Date>{getDateString(created)}</Date>
       </div>
-
-      <Date>{getDateString(created)}</Date>
     </InfoWrapper>
   );
 };

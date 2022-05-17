@@ -12,6 +12,7 @@ const Feed = styled.div`
   max-width: 700px;
   align-items: center;
   width: 100%;
+  padding: 0 32px;
 `;
 
 const Input = styled.input`

@@ -12,6 +12,7 @@ const TagWrapper = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-bottom: 8px;
 `;
 
 const Tag = (tag) => <TagWrapper>{tag}</TagWrapper>;

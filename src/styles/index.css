@@ -1,18 +1,24 @@
 @import url("https://fonts.googleapis.com/css?family=Anton&display=swap");
 @import url("https://fonts.googleapis.com/css?family=Montserrat:100,100i,200,200i,300,300i,400,400i,500,500i,600,600i,700,700i,800,800i,900,900i&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600;700&display=swap");
 
 @import "./highlight.css";
 @import "./variables.css";
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-    sans-serif;
+  font-family: "Inter", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   --red: #ee6352;
   --blue: #08b2e3;
+}
+
+*,
+*:before,
+*:after {
+  box-sizing: border-box;
 }
 
 code {
@@ -25,7 +31,9 @@ img {
 }
 
 p {
-  font-family: "Montserrat", sans-serif;
+  font-family: "Inter", sans-serif;
+  font-size: 20px;
+  color: #333;
 }
 
 pre code {
@@ -38,4 +46,12 @@ pre code {
   overflow-x: visible;
   word-wrap: wrap;
   font-family: "Dank Mono", monospace;
+}
+
+/* Mobile */
+
+@media screen and (max-width: 768px) {
+  body {
+    --title-size: 2.5rem;
+  }
 }

@@ -1,6 +1,6 @@
 export const posts = [
   {
-    id: "1",
+    id: "02352ef0-e269-4e97-9a7b-db53a6cec0e5",
     title: "Playing Cards",
     link: "https://fippli.se/playing-cards",
     created: 1640082699673,
@@ -9,7 +9,7 @@ export const posts = [
     repository: "",
   },
   {
-    id: "2",
+    id: "81fb8623-c6cd-4b31-8be2-08cb0894ab6d",
     title: "Galaxy Animation",
     link: "https://fippli.se/galaxy-animation",
     created: 1640082699673,
@@ -19,7 +19,7 @@ export const posts = [
     repository: "https://github.com/fippli/galaxy-animation",
   },
   {
-    id: "3",
+    id: "fb2295cb-c47a-4bf3-8539-1958489d3f38",
     title: "Pong",
     link: "https://fippli.se/fipplipong",
     created: 1640082699673,
@@ -28,7 +28,7 @@ export const posts = [
     repository: "https://github.com/fippli/fipplipong",
   },
   {
-    id: "4",
+    id: "8425bca9-7815-4dbe-82f8-b80c3ce0a411",
     title: "Plankton",
     link: "https://fippli.se/plankton",
     created: 1640082699673,
@@ -37,7 +37,7 @@ export const posts = [
     repository: "https://github.com/fippli/plankton",
   },
   {
-    id: "5",
+    id: "2cb446b1-ef83-4a6a-bbf6-4922a82203d1",
     title: "QR Code Generator",
     link: "https://fippli.se/qr",
     created: 1649064597545,
@@ -46,12 +46,22 @@ export const posts = [
     repository: "https://github.com/fippli/qr",
   },
   {
-    id: "6",
+    id: "e4ce0060-73a8-4f12-a986-c4ecae801a43",
     title: "Lilldag",
     link: "https://fippli.se/lilldag",
     created: 1649064597545,
     tags: ["HTML", "CSS", "JavaScript", "Utility"],
     content: 'Know what "lilldag" it is.',
+    repository: "https://github.com/fippli/lilldag",
+  },
+  {
+    id: "85aa7cde-00de-49d9-a192-6ad640e7a7b6",
+    title: "No background background",
+    link: "https://fippli.se/no-background",
+    created: 1652775443392,
+    tags: ["HTML", "CSS"],
+    content:
+      "Simple CSS for the background you see in photo editing software that symbolizes that there is no background.",
     repository: "https://github.com/fippli/lilldag",
   },
 ];
