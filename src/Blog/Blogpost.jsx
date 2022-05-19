@@ -59,7 +59,9 @@ const Date = styled.span`
 const TitleRow = ({ title, link }) => {
   return (
     <TitleWrapper>
-      <StyledLink href={link}>{title}</StyledLink>
+      <StyledLink href={link} id={title}>
+        {title}
+      </StyledLink>
     </TitleWrapper>
   );
 };
