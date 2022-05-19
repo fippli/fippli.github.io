@@ -48,6 +48,11 @@ pre code {
   font-family: "Dank Mono", monospace;
 }
 
+audio {
+  margin: 32px 0;
+  width: 100%;
+}
+
 /* Mobile */
 
 @media screen and (max-width: 768px) {

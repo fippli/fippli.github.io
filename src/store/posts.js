@@ -67,11 +67,10 @@ export const posts = [
   {
     id: "9295708f-aeba-4b99-9260-cd9dbcca09ca",
     title: "Reykjavik.mp3",
-    link: "/music/Reykjavik.mp3",
+    link: null,
     created: 1652945684642,
     tags: ["modplug", "music"],
-    content:
-      "Song made with the [modplug](https://www.modplug.com/#/) program.",
+    content: `Song made with the [modplug](https://www.modplug.com/#/) program. <audio controls src="/files/Reykjavik.mp3" />`,
     repository: null,
   },
 ];
