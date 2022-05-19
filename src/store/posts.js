@@ -62,6 +62,16 @@ export const posts = [
     tags: ["HTML", "CSS"],
     content:
       "Simple CSS for the background you see in photo editing software that symbolizes that there is no background.",
-    repository: "https://github.com/fippli/lilldag",
+    repository: "https://github.com/fippli/no-background",
+  },
+  {
+    id: "9295708f-aeba-4b99-9260-cd9dbcca09ca",
+    title: "Reykjavik.mp3",
+    link: "/music/Reykjavik.mp3",
+    created: 1652945684642,
+    tags: ["modplug", "music"],
+    content:
+      "Song made with the [modplug](https://www.modplug.com/#/) program.",
+    repository: null,
   },
 ];

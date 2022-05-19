@@ -1,5 +1,5 @@
 import { useReducer } from "react";
-import { AppRoutes } from "./AppRoutes.jsx";
+import { Views } from "./views/index.jsx";
 import AppContext from "./store/AppState";
 import { initialState } from "./store/initialState.js";
 import { reducer } from "./store/reducer.js";
@@ -14,7 +14,7 @@ const App = () => {
         dispatch,
       }}
     >
-      <AppRoutes />
+      <Views />
     </AppContext.Provider>
   );
 };

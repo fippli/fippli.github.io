@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import styled from "styled-components";
 
 import { Title } from "../components/Title";
@@ -12,6 +13,11 @@ const FooterWrapper = styled.footer`
   min-height: 128px;
   background-color: #f9f9f9;
   margin-top: 128px;
+  padding: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 `;
 const Main = styled.main`
   display: flex;
@@ -30,10 +36,17 @@ const Icon = styled.a`
   margin-right: 30px;
 `;
 
+const UnstyledLink = styled(Link)`
+  text-decoration: none;
+  color: inherit;
+`;
+
 const Header = () => {
   return (
     <HeaderWrapper>
-      <Title>FIPPLI</Title>
+      <Title>
+        <UnstyledLink to="/">FIPPLI</UnstyledLink>
+      </Title>
       <IconList>
         <Icon href="https://github.com/fippli">
           <i className="fab fa-github" />
@@ -47,7 +60,18 @@ const Header = () => {
 };
 
 const Footer = () => {
-  return <FooterWrapper></FooterWrapper>;
+  return (
+    <FooterWrapper>
+      <IconList>
+        <Icon href="https://github.com/fippli">
+          <i className="fab fa-github" />
+        </Icon>
+        <Icon href="https://www.linkedin.com/in/filip-johansson-036b9984/">
+          <i className="fab fa-linkedin" />
+        </Icon>
+      </IconList>
+    </FooterWrapper>
+  );
 };
 
 export const Layout = ({ children }) => {
