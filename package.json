@@ -10,7 +10,8 @@
     "build": "BUILD_PATH='./docs' react-scripts build",
     "postbuild": "cp CNAME ./docs/CNAME && git add -A && git commit -m 'docs: update' && git push",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "deploy": "npm run build && git add . && git commit -m 'update' && git push"
   },
   "eslintConfig": {
     "extends": "react-app"
