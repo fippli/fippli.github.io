@@ -10,6 +10,7 @@ description: |
 
 ## CSS
 
+- [Styling for semantic HTML](/css)
 - [Playing cards](/playing-cards)
 - [Gamepad](/gamepad)
 - [Space Travel Animation](/space-travel-animation)
