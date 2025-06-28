@@ -1,5 +1,5 @@
 ---
-status: draft
+status: unlisted
 date: 2025-06-28
 title: Projects
 description: |
@@ -16,4 +16,4 @@ description: |
 
 ## Websites
 
-- [Lilldag](lilldag.se)
+- [Lilldag](/lilldag)
