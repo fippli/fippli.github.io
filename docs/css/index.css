@@ -1,0 +1,42 @@
+ul {
+  list-style-type: none;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+ul li {
+  display: flex;
+  flex-direction: column;
+}
+
+ul li h3 {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.date {
+  font-weight: bold;
+  font-size: 0.8rem;
+  color: #222;
+  margin: 0;
+}
+
+.button-link {
+  display: block;
+  padding: 8px 16px;
+  border-radius: 4px;
+  background-color: #000;
+  color: #fff;
+  text-decoration: none;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  width: 100%;
+  max-width: 500px;
+  text-align: center;
+  margin-top: 16px;
+}
+
+.read-indicator {
+  content: "";
+}

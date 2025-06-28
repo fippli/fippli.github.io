@@ -14,6 +14,8 @@
       href="https://cdn.jsdelivr.net/npm/prismjs@v1/themes/prism.css"
       rel="stylesheet"
     />
+
+    <link rel="stylesheet" href="css/index.css" />
   </head>
   <body>
     <header>
@@ -24,60 +26,6 @@
         <a href="https://github.com/fippli">github</a>
       </nav>
     </header>
-
-    <style>
-      body {
-        display: flex;
-        flex-direction: column;
-        min-height: 100vh;
-      }
-
-      main {
-        flex: 1;
-      }
-
-      ul {
-        list-style-type: none;
-        margin-left: 0;
-        padding-left: 0;
-      }
-
-      ul li {
-        border-radius: 8px;
-        padding: 32px;
-        border: 1px solid rgba(0, 0, 0, 0.1);
-        margin-bottom: 16px;
-        display: flex;
-        flex-direction: column;
-      }
-
-      .date {
-        font-weight: bold;
-        font-size: 0.8rem;
-        color: #222;
-        margin: 0;
-      }
-
-      .button-link-wrapper {
-        display: flex;
-        justify-content: flex-end;
-        margin-top: 16px;
-      }
-
-      .button-link {
-        display: block;
-        padding: 8px 16px;
-        border-radius: 100px;
-        background-color: #000;
-        color: #fff;
-        text-decoration: none;
-        cursor: pointer;
-      }
-
-      .read-indicator {
-        content: "";
-      }
-    </style>
 
     <main>
       <h1>The Chief Pig Makeup Artist</h1>
@@ -103,68 +51,83 @@
       <h2>Posts</h2>
       <ul>
         <li>
-          <h3>IIFE as a way to avoid mutation</h3>
-          <p class="date">2024-12-29</p>
-          <p>
-            A trick if you want to have pure conditional declaration of
-            variables
-          </p>
-          <div class="button-link-wrapper">
-            <a href="declare-with-iife.html" class="button-link"
-              >Read this post</a
-            >
-          </div>
+          <fieldset>
+            <legend>2024-12-29</legend>
+
+            <h3>IIFE as a way to avoid mutation</h3>
+            <p>
+              A trick if you want to have pure conditional declaration of
+              variables
+            </p>
+
+            <a href="declare-with-iife.html" class="button-link">Read post</a>
+          </fieldset>
         </li>
+
         <li>
-          <h3>Nullish coalescing operator</h3>
-          <p class="date">2024-12-12</p>
-          <p>Use <code>??</code> over <code>||</code></p>
-          <div class="button-link-wrapper">
+          <fieldset>
+            <legend>2024-12-12</legend>
+
+            <h3>Nullish coalescing operator</h3>
+            <p>Use <code>??</code> over <code>||</code></p>
+
             <a href="nullish-coalescing-operator.html" class="button-link"
-              >Read this post</a
+              >Read post</a
             >
-          </div>
+          </fieldset>
         </li>
+
         <li>
-          <h3>Why falsiness is a bad idea</h3>
-          <p class="date">2024-10-25</p>
-          <p>Why this is a bad idea</p>
-          <pre><code class="javascript language-javascript">if (myData) doSomething()
+          <fieldset>
+            <legend>2024-10-25</legend>
+
+            <h3>Why falsiness is a bad idea</h3>
+            <p>Why this is a bad idea</p>
+            <pre><code class="javascript language-javascript">if (myData) doSomething()
 </code></pre>
-          <div class="button-link-wrapper">
+
             <a href="falsy-and-is-defined.html" class="button-link"
-              >Read this post</a
+              >Read post</a
             >
-          </div>
+          </fieldset>
         </li>
+
         <li>
-          <h3>Javascript Emptiness</h3>
-          <p class="date">2024-10-23</p>
-          <pre><code class="javascript language-javascript">[].isEmpty() // true
+          <fieldset>
+            <legend>2024-10-23</legend>
+
+            <h3>Javascript Emptiness</h3>
+            <pre><code class="javascript language-javascript">[].isEmpty() // true
 </code></pre>
-          <div class="button-link-wrapper">
-            <a href="is-empty.html" class="button-link">Read this post</a>
-          </div>
+
+            <a href="is-empty.html" class="button-link">Read post</a>
+          </fieldset>
         </li>
+
         <li>
-          <h3>General Reducer Action Switch</h3>
-          <p class="date">2024-10-19</p>
-          <pre><code class="javascript language-javascript">dispatch({ $set: { count: 1 } })
+          <fieldset>
+            <legend>2024-10-19</legend>
+
+            <h3>General Reducer Action Switch</h3>
+            <pre><code class="javascript language-javascript">dispatch({ $set: { count: 1 } })
 </code></pre>
-          <div class="button-link-wrapper">
+
             <a href="general-reducer-action-switch.html" class="button-link"
-              >Read this post</a
+              >Read post</a
             >
-          </div>
+          </fieldset>
         </li>
+
         <li>
-          <h3>React reducer idea</h3>
-          <p class="date">2024-10-19</p>
-          <pre><code class="javascript language-javascript">dispatch(action1, action2, action3, ...)
+          <fieldset>
+            <legend>2024-10-19</legend>
+
+            <h3>React reducer idea</h3>
+            <pre><code class="javascript language-javascript">dispatch(action1, action2, action3, ...)
 </code></pre>
-          <div class="button-link-wrapper">
-            <a href="reducer.html" class="button-link">Read this post</a>
-          </div>
+
+            <a href="reducer.html" class="button-link">Read post</a>
+          </fieldset>
         </li>
       </ul>
     </main>
