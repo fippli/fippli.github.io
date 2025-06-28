@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>React reducer idea</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/fippli/css@latest/regular.css"
+    />
+    <link
+      href="https://cdn.jsdelivr.net/npm/prismjs@v1/themes/prism.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <header>
+      <nav>
+        <a href="index.html">Blog</a>
+      </nav>
+    </header>
+    <main>
+      <article>
+        <h1>General Reducer Action Switch</h1>
+
+        <p>
+          It's a bit annoying to write specific action handlers for each action
+          since most of them share the same pattern if they modify data of the
+          same type or data structure. With the help of the
+          <code class="language-javascript">
+            multipleActionReducer
+          </code>
+          <a href="./reducer.html">(blog post here)</a> its possible to combine 
+          multiple actions to make a custom behavior closer to where the actions are called.
+        </p>
+
+        <p>
+          I want to have an action that takes an operator and a payload
+          describing how to modify the data by modeling the object to change. So
+          the action would look like this: 
+          <code class="language-javascript">
+            { $set: { count: 10 } }
+          </code> 
+          would set the key <code>count</code> to 10 in the state.
+        </p>
+
+        <h2>Implementation of $set</h2>
+        <p>
+          <pre><code class="language-javascript">const actionSwitch = (state, action) => {
+  const [operator, payload] = Object.entries(action).at(0);
+
+  const [key, value] = Object.entries(payload).at(0);
+
+  switch (operator) {
+    case "$set": {
+      return { 
+        ...state, 
+        [key]: value 
+      };
+    }
+
+    default: {
+      return state;
+    }
+  }
+}</code></pre>
+        </p>
+
+        <h2>More complex update with $function</h2>
+
+        <p>
+          If we need to modify the state in a more complex way we can make up an operator <code class="language-javascript">$function</code> that takes a function as a value.
+          
+          <code class="language-javascript">
+            { $function: { count: f } }
+          </code> 
+          to calculate the next value for the action where
+          <code class="language-javascript">
+            const f = (state, action) => state.someNumber + state.count;
+          </code>
+          will set <code>count</code> to the sum of
+          <code class="language-javascript">
+            someNumber + count
+          </code>.
+        </p>
+
+        <p>
+          <pre><code class="language-javascript">const actionSwitch = (state, action) => {
+  const [operator, payload] = Object.entries(action).at(0);
+
+  const [key, fn] = Object.entries(payload).at(0);
+
+  switch (operator) {
+    case "$function": {
+      return { 
+        ...state, 
+        [key]: fn(state, action);
+      };
+    }
+
+    default: {
+      return state;
+    }
+  }
+}</code></pre>
+        </p>
+
+        <h2>Usage in React</h2>
+        <p>
+          <pre><code class="language-jsx">const Component = () => {
+  const [state, dispatch] = useReducer(actionSwitch, { email: "" });
+
+  return (
+    &lt;input
+      onChange={(event) => { 
+        dispatch({ 
+          $set: { email: event.target.value } 
+        });
+      }}
+    /&gt;);
+};</code></pre>
+        </p>
+
+
+        <h2>Continuation</h2>
+        <p>
+          These examples only works for flat states. There are thing that can be done to handle nested payloads like
+          <code class="language-javascript">
+            { $set: { count: { value: { n: 0 } } } }
+          </code> but that's for another article.
+        </p>
+      </article>
+    </main>
+
+    <footer></footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@v1/components/prism-core.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@v1/plugins/autoloader/prism-autoloader.min.js"></script>
+  </body>
+</html>

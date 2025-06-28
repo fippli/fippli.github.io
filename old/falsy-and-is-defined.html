@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Falsy/Truthy</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/fippli/css@latest/regular.css"
+    />
+    <link
+      href="https://cdn.jsdelivr.net/npm/prismjs@v1/themes/prism.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <header>
+      <nav>
+        <a href="index.html">Blog</a>
+      </nav>
+    </header>
+    <main>
+      <article>
+        <h1>Why falsiness is a bad idea</h1>
+
+        <p>
+          It doesn't require much thought to convince yourself that "falsy" and
+          "truthy" checking is prone to bugs.
+        </p>
+        <p>
+          It's a pretty common pattern among JavaScript developers, and can
+          introduce the most insidious (pretty awesome reference since the demon
+          is called the "lipstick demon") bugs.
+        </p>
+
+        <h2>What is it?</h2>
+
+        <p>
+          Truty/falsy checking is when a value is interpreted as
+          <code class="language-javascript">true</code> or
+          <code class="language-javascript">false</code>. The most obvious
+          example is
+          <code class="language-javascript">0 == false // true</code> if you
+          care to open a browser terminal and type that in.
+        </p>
+
+        <h2>What is the problem?</h2>
+
+        <p>
+          So another funky thing is this:
+          <code class="language-javascript">!null // true</code> or
+          <code class="language-javascript">!undefined // true</code> or
+          So when JavaScript developers want to check if thier variable is populated with a value they do stuff like this
+          <pre><code class="language-javascript">function(x) {
+  if (x) {
+    // We have a value
+    doSomething();
+  }
+}</code></pre>
+        </p>
+        <p>If we get an empty string or a zero here we are doomed.</p>
+
+        <p>
+          What we really want to check is if the value is either
+          <code class="language-javascript">undefined</code> or
+          <code class="language-javascript">null</code>
+          But that too is really annoying becase it's a lot of code for very
+          basic stuff.
+        </p>
+
+        <pre><code class="language-javascript">function(x) {
+  if (x !== undefined || x !== null) {
+    // We have a value (including '' and 0)
+    doSomething();
+  }
+}</code></pre>
+
+        <p>
+          Or another one I've tried
+          <code class="language-javascript"
+            >![null, undefined].includes(x)</code
+          >
+
+          This is a pretty nice function we can call <code class="language-javascript">const isDefined = (x) => ![null, undefined].includes(x)</code>
+          and use it in our code. It makes a lot of sense
+          <pre><code class="language-javascript">function(x) {
+  if (isDefined(x)) {
+    // We have a value (including '' and 0)
+    doSomething();
+  }
+}</code></pre>
+        </p>
+
+        <h2>Areas of application</h2>
+        <p>
+          <pre><code class="language-javascript">const xs = [0, 1, null, 13, undefined, 0, 12];
+xs.filter(isDefined); // keeps all numbers</code></pre>
+        </p>
+      </article>
+    </main>
+
+    <footer></footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@v1/components/prism-core.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@v1/plugins/autoloader/prism-autoloader.min.js"></script>
+  </body>
+</html>

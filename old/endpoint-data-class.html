@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Endpoint Data Class</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/fippli/css@latest/regular.css"
+    />
+    <link
+      href="https://cdn.jsdelivr.net/npm/prismjs@v1/themes/prism.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <header>
+      <nav>
+        <a href="index.html">Blog</a>
+      </nav>
+    </header>
+    <main>
+      <article>
+        <h1>Endpoint Data Class</h1>
+
+        <p>I want a class that works like this:</p>
+
+        <pre><code class="language-javascript">const someEndpoint = new Endpoint("/foo/:id");
+
+// Construct the endpoint with parameters and query
+// NOTE: should only be callable once. We want to avoid
+// mutating the endpoint by mistake...
+someEndpoint
+  .parameters({ 
+    id: "c4cf8dd7-0374-45e7-bdf2-31f09ff38675"
+  })
+  .query({
+    q: 123
+  });
+
+someEndpoint.toString() // => '/foo/c4cf8dd7-0374-45e7-bdf2-31f09ff38675?q=123'
+
+someEndpoint.get() // api GET request to backend
+
+someEndpoint.post(body) // api POST request to backend
+</code></pre>
+
+        <p>
+          etc. etc. Let's build it :)
+          <em>To be continued...</em>
+        </p>
+      </article>
+    </main>
+
+    <footer></footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@v1/components/prism-core.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@v1/plugins/autoloader/prism-autoloader.min.js"></script>
+  </body>
+</html>

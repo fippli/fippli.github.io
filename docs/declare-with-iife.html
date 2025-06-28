@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Chief Pig Makeup Artist - IIFE as a way to avoid mutation</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/fippli/css/regular.css"
+    />
+
+    <link
+      href="https://cdn.jsdelivr.net/npm/prismjs@v1/themes/prism.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <style>
+      body {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+
+      main {
+        flex: 1;
+      }
+    </style>
+    <header>
+      <nav>
+        <a href="index.html">Blog</a>
+        <a href="references.html">References</a>
+        <a href="http://fippli.se">fippli.se</a>
+        <a href="https://github.com/fippli">github</a>
+      </nav>
+    </header>
+
+    <main>
+      <article>
+        <h1
+          id="iifehttpsdevelopermozillaorgenusdocsglossaryiifeasawaytoavoidmutation"
+        >
+          <a href="https://developer.mozilla.org/en-US/docs/Glossary/IIFE"
+            >IIFE</a
+          >
+          as a way to avoid mutation
+        </h1>
+        <p>
+          Out of <code>var</code>, <code>let</code> and <code>const</code> you
+          should have chosen to only use <code>const</code> at this point since
+          it is immutable (with some exceptions when it comes to objects). So
+          this is the way to go:
+        </p>
+        <pre><code class="javascript language-javascript">const status = "ok";
+</code></pre>
+        <p>
+          However sometimes you might want to assign a value based on a
+          condition like
+        </p>
+        <pre><code class="javascript language-javascript">const status = isOk ? "ok" : "failed";
+</code></pre>
+        <p>
+          Fair enough. But if you want more complex conditions that are not
+          binary and are not a straight forward mapping of values you might get
+          tempted to do horrible things like this:
+        </p>
+        <pre><code class="javascript language-javascript">let theTemptationMakeYouCheat = "ok";
+
+if (thisOrThat) {
+  theTemptationMakeYouCheat = "failed";
+}
+
+if (thatOrThis || time &gt; 100) {
+  // just making things up to make a point
+  theTemptationMakeYouCheat = "pending";
+}
+
+useFilthyVariableInSomeSadWayBecause(theTemptationMakeYouCheat);
+</code></pre>
+        <p>
+          One way to go if you are lazy is to use <code>iife</code> to
+          immediately calculate the result:
+        </p>
+        <pre><code class="javascript language-javascript">const status = (() =&gt; {
+  if (isOk) {
+    return "ok";
+  }
+
+  if (isPending) {
+    return "pending";
+  }
+
+  return "failed";
+})();
+</code></pre>
+      </article>
+    </main>
+
+    <footer></footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@v1/components/prism-core.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@v1/plugins/autoloader/prism-autoloader.min.js"></script>
+  </body>
+</html>

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Chief Pig Makeup Artist - Javascript Emptiness</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/fippli/css/regular.css"
+    />
+
+    <link
+      href="https://cdn.jsdelivr.net/npm/prismjs@v1/themes/prism.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <style>
+      body {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+
+      main {
+        flex: 1;
+      }
+    </style>
+    <header>
+      <nav>
+        <a href="index.html">Blog</a>
+        <a href="references.html">References</a>
+        <a href="http://fippli.se">fippli.se</a>
+        <a href="https://github.com/fippli">github</a>
+      </nav>
+    </header>
+
+    <main>
+      <article>
+        <h1 id="javascriptemptiness">JavaScript Emptiness</h1>
+        <p>
+          This <code>[].isEmpty() // true</code> is easier to read than
+          <code>[].length === 0 // true</code>
+        </p>
+        <p>
+          But if you try that you will get an error saying
+          <code>Uncaught TypeError: [].isEmpty is not a function</code>
+        </p>
+        <p>You can easily prototype this behavior.</p>
+        <h2 id="arrays">Arrays</h2>
+        <pre><code class="javascript language-javascript">Array.prototype.isEmpty = function () {
+  return this.length === 0;
+};
+</code></pre>
+        <pre><code class="javascript language-javascript">// Examples
+
+[].isEmpty(); // true
+
+const a = [];
+a.isEmpty(); // true
+</code></pre>
+        <h2 id="strings">Strings</h2>
+        <pre><code class="javascript language-javascript">String.prototype.isEmpty = function () {
+  return this.length === 0;
+};
+</code></pre>
+        <pre><code class="javascript language-javascript">// Examples
+
+"".isEmpty(); // true
+
+const s = "";
+s.isEmpty(); // true
+</code></pre>
+        <h2 id="objects">Objects</h2>
+        <p>
+          <code>{}.isEmpty()</code> wont work but it does if you define an
+          object first.
+        </p>
+        <pre><code class="javascript language-javascript">Object.prototype.isEmpty = function () {
+  return Object.keys(this).length === 0;
+};
+</code></pre>
+        <p>Will work if you first define an object.</p>
+        <pre><code class="javascript language-javascript">// Examples
+
+const o = {};
+o.isEmpty(); // true
+</code></pre>
+        <h2 id="conclusion">Conclusion</h2>
+        <p>Let's sum this up with a little "file" you can use</p>
+        <pre><code class="javascript language-javascript">// isEmpty.js
+
+Array.prototype.isEmpty = function () {
+  return this.length === 0;
+};
+
+String.prototype.isEmpty = function () {
+  return this.length === 0;
+};
+
+Object.prototype.isEmpty = function () {
+  return Object.keys(this).length === 0;
+};
+</code></pre>
+      </article>
+    </main>
+
+    <footer></footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@v1/components/prism-core.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@v1/plugins/autoloader/prism-autoloader.min.js"></script>
+  </body>
+</html>
