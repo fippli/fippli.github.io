@@ -25,5 +25,6 @@ description: |
 ## Websites
 
 - [Image to Base64](/img-to-base64)
+- [Base64 to image](/base64-to-image)
 - [Lilldag](/lilldag)
 - [QR code generator](/qr)
