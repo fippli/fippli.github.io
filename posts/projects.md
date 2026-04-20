@@ -22,6 +22,10 @@ description: |
 - [Pong](/fipplipong)
 - [Plankton](/plankton)
 
+## Desktop Apps
+
+- [Markdown Editor](https://github.com/fippli/markdown-editor)
+
 ## Websites
 
 - [Scrolor](/scrolor)
