@@ -24,9 +24,9 @@ description: |
 
 ## Desktop Apps
 
-- [Markdown Editor](https://github.com/fippli/markdown-editor)
-- [Image Editor](https://github.com/fippli/image-editor)
-- [Image Viewer](https://github.com/fippli/image-viewer)
+- [Markdown Editor](/markdown-editor)
+- [Image Editor](/image-editor)
+- [Image Viewer](/image-viewer)
 
 ## Websites
 
