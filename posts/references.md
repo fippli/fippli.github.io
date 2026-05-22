@@ -19,3 +19,4 @@ description: List of reference information
 - [The Post JavaScript Apocalypse](https://www.youtube.com/watch?v=NPB34lDZj3E) \- _Douglas Crockford_
 - [Plan for tradeoffs: You can’t optimize all software quality attributes](https://stackoverflow.blog/2022/01/17/plan-for-tradeoffs-you-cant-optimize-all-software-quality-attributes/) \- _Karl Wiegers_
 - [Benchmarking JavaScript](https://www.youtube.com/watch?v=g0ek4vV7nEA) \- _Vyacheslav Egorov_
+- [The Letter S](https://gwern.net/doc/design/typography/1980-knuth.pdf) \- _Donald E. Knuth_
