@@ -2,7 +2,7 @@
 
 /* ================= Config ================= */
 
-const SAVE_KEY = 'global-warming-save-v5';
+const SAVE_KEY = 'global-warming-save-v6';
 const COST_GROWTH = 1.15;
 const OFFLINE_RATE = 0.5;          // fraction of production earned while away
 const OFFLINE_CAP_S = 12 * 3600;   // max offline time counted
@@ -18,20 +18,20 @@ const SUN_IGNITED = 0.7;           // the young sun shone at about 70% of today'
 const THERMAL_LAG_S = 5;           // how fast temperature follows its target on an ice-covered planet
 const OCEAN_LAG_S = 60;            // extra lag once oceans are open: water takes long to heat
 
-// Frozen gases and the temperature (K) where they turn into air.
+// Frozen gases: the temperature (K) where each one can first be thawed into air.
+// Which gases actually thaw is the player's choice (Air panel); see spec.md, "Choosing what to thaw".
 const GASES = [
-  { id: 'n2', name: 'Nitrogen', at: 63, title: 'Nitrogen ice melts', text: 'At −210 °C the nitrogen ice melts. Soon it boils into the first thin air.' },
-  { id: 'air', name: 'Air', at: 77, title: 'The first atmosphere', text: 'Nitrogen boils at −196 °C. The planet has air, and air can hold heat.' },
-  { id: 'ch4', name: 'Methane', at: 112, title: 'Methane thaws', text: 'At −161 °C methane becomes gas. It traps heat, and the sky turns hazy orange.' },
-  { id: 'co2', name: 'Carbon dioxide', at: 195, title: 'CO₂ thaws', text: 'At −78 °C the CO₂ ice turns to gas. The greenhouse effect kicks in.' },
+  { id: 'n2', at: 63, title: 'Nitrogen can thaw', text: 'At −210 °C nitrogen ice can melt into air. Choose it in the Air panel.' },
+  { id: 'ch4', at: 112, title: 'Methane can thaw', text: 'At −161 °C methane can become gas. Choose it in the Air panel.' },
+  { id: 'co2', at: 195, title: 'CO₂ can thaw', text: 'At −78 °C CO₂ ice can turn to gas. Choose it in the Air panel.' },
 ];
 
 // The early game unlocks the planet in a fixed order. See spec.md, "Unlock sequence".
 const STEPS = [
-  { name: 'Light the sun', goal: 'Tap the dark sun until it ignites. Each gas thaws at its real temperature.' },
-  { name: 'Melt ice', goal: 'Reach 0°C. Brighten the sun, and let volcanoes pump CO₂ and darken the ice with dust.', unlockText: 'The planet is a snowball under a real atmosphere. Melt it.' },
-  { name: 'Ocean', goal: 'Open 30% of the planet to water. Dark water absorbs sunlight, so the thaw speeds up: lower volcanic activity in the Sun tab to avoid a hothouse.', unlockText: 'Open water at 0°C! Dark water absorbs sunlight, so warming speeds up. Turn volcanic activity down in the Sun tab to avoid overheating.', tab: 'ocean' },
-  { name: 'Clouds', goal: `Warm water evaporates. Build cloud cover to ${STORM_CLOUDS * 100}% so storms form. Tap clouds for rain: it washes minerals into the sea.`, unlockText: 'Water vapor rises. The first clouds form.' },
+  { name: 'Light the sun', goal: 'Tap the dark sun until it ignites. As the planet warms, choose which frozen gases to thaw in the Air panel.' },
+  { name: 'Melt ice', goal: 'Reach 0°C. Build volcanoes in the Core, brighten the Sun and thaw greenhouse gases in the Air panel.', unlockText: 'The sun is lit and burns on its own. Tap it to open its upgrades. Now melt the snowball.', tab: 'core' },
+  { name: 'Ocean', goal: 'Open 30% of the planet to water. Dark water absorbs sunlight, so the thaw speeds up: turn volcanic activity down in the Core to avoid a hothouse. The moon can be woken now.', unlockText: 'Open water at 0°C! Warming speeds up now: turn volcanic activity down in the Core. Tap the moon to wake it.', tab: 'ocean' },
+  { name: 'Clouds', goal: `Warm water evaporates. Build cloud cover to ${STORM_CLOUDS * 100}% so storms form. Tap clouds for rain: it washes minerals into the sea.`, unlockText: 'Water vapor rises. The first clouds form. Solar wind is stripping the air: a Magnetic Field in the Core stops it.' },
   { name: 'Thunder', goal: 'Tap storm clouds to strike lightning into the ocean. Fill the primordial soup.', unlockText: 'Storms! Tap a dark cloud to strike lightning.' },
   { name: 'Life', goal: 'The first cell is spreading through the ocean.', unlockText: 'Lightning in the soup made something... alive. The first cell!', tab: 'ocean' },
   { name: 'Water evolution', goal: `Evolve ocean life with DNA and keep the planet between ${LIFE_WINDOW[0]} and ${LIFE_WINDOW[1]}°C. Land opens at ${OZONE_FOR_LAND * 100}% ozone.`, unlockText: 'Life is established. Spend DNA to evolve. Life cools the planet: watch the temperature.', tab: 'ocean' },
@@ -39,40 +39,59 @@ const STEPS = [
   { name: 'Air', goal: 'Life rules the planet. The Age of Dinosaurs is coming next.', unlockText: 'Something has taken to the air. The sky is alive!', tab: 'atmosphere' },
 ];
 
+// Component panels, shown in the tab bar once unlocked.
 const TABS = {
-  sun: { step: 0, hint: '' },
-  ocean: { step: 2, hint: 'The ocean is frozen solid. Melt the ice first.' },
-  ground: { step: 7, hint: 'The land is lifeless rock. Life must leave the ocean first.' },
-  atmosphere: { step: 8, hint: 'Nothing lives in the sky yet. Something has to learn to fly.' },
-  life: { step: 5, hint: 'There is no life yet. Lightning in the ocean will start it.' },
-  world: { step: 0, hint: '' },
+  sun: { unlocked: () => true, hint: '' },
+  moon: { unlocked: () => state.step >= 2, hint: 'The moon is asleep. It needs an ocean to pull on.' },
+  atmosphere: { unlocked: () => state.step >= 1 || state.tempK >= GASES[0].at, hint: 'Nothing can thaw yet. Warm the planet with the sun.' },
+  core: { unlocked: () => state.step >= 1, hint: 'Light the sun first.' },
+  ocean: { unlocked: () => state.step >= 2, hint: 'The ocean is frozen solid. Melt the ice first.' },
+  ground: { unlocked: () => state.step >= 7, hint: 'The land is lifeless rock. Life must leave the ocean first.' },
+  life: { unlocked: () => state.step >= 5, hint: 'There is no life yet. Lightning in the ocean will start it.' },
+  world: { unlocked: () => true, hint: '' },
 };
 
 // Buildings bought with Energy. Cost grows 15% per copy.
 const BUILDINGS = [
-  { id: 'wind', icon: 'wind', tab: 'sun', step: 0, name: 'Solar Wind', desc: 'A steady stream from the sun. Energy, and it keeps the sun burning.', cost: 15, energy: 0.3, ignition: 0.002 },
-  { id: 'volcano', icon: 'vent', tab: 'sun', step: 1, name: 'Volcano', desc: 'The planet\'s core pushes CO₂ into the air. Ash darkens the ice.', cost: 60, energy: 0.5, co2: 8, dust: 0.04 },
-  { id: 'current', icon: 'wave', tab: 'ocean', step: 2, name: 'Warm Current', desc: 'Carries tropical heat toward the poles, so ice retreats at lower temperatures.', cost: 300, energy: 1, iceShift: 0.4 },
-  { id: 'vent', icon: 'vent', tab: 'ocean', step: 2, name: 'Hydrothermal Vent', desc: 'Hot water on the sea floor. Minerals and a little methane.', cost: 900, energy: 3, minerals: 0.2, ch4: 0.005 },
-  { id: 'storm', icon: 'bolt', tab: 'ocean', step: 4, name: 'Thunderstorm', desc: 'Strikes lightning on its own now and then.', cost: 2500, energy: 5, lightning: 0.08 },
+  { id: 'volcano', icon: 'vent', tab: 'core', step: 1, name: 'Volcano', desc: 'The core pushes CO₂ into the air. Ash darkens the ice.', cost: 60, co2: 12, dust: 0.05 },
+  { id: 'current', icon: 'wave', tab: 'ocean', step: 2, name: 'Warm Current', desc: 'Carries tropical heat toward the poles, so ice retreats at lower temperatures.', cost: 300, iceShift: 0.4 },
+  { id: 'vent', icon: 'vent', tab: 'ocean', step: 2, name: 'Hydrothermal Vent', desc: 'Hot water on the sea floor. Minerals and a little methane.', cost: 900, minerals: 0.2, ch4: 0.005 },
+  { id: 'storm', icon: 'bolt', tab: 'atmosphere', step: 4, name: 'Thunderstorm', desc: 'Strikes lightning on its own now and then.', cost: 2500, lightning: 0.08 },
 ];
 
-// One-time upgrades bought with Energy.
+// One-time component upgrades bought with Energy. `requires` must be owned first; `minK` is the
+// temperature (K) where a gas can first thaw; moon upgrades need the moon awake.
 const UPGRADES = [
-  { id: 'bright', icon: 'sunicon', tab: 'sun', step: 0, name: 'Stoke the Core', desc: 'Sun taps x2.', cost: 25, tapMult: 2 },
-  { id: 'flare', icon: 'sunicon', tab: 'sun', step: 0, name: 'Solar Flares', desc: 'Sun taps x2.', cost: 400, tapMult: 2 },
-  { id: 'sun1', icon: 'sunicon', tab: 'sun', step: 1, name: 'Sun Matures I', desc: 'The young sun brightens: 70% to 78% of today.', cost: 200, sun: 0.78 },
-  { id: 'sun2', icon: 'sunicon', tab: 'sun', step: 1, name: 'Sun Matures II', desc: 'The sun brightens to 86% of today.', cost: 2000, sun: 0.86 },
-  { id: 'sun3', icon: 'sunicon', tab: 'sun', step: 2, name: 'Sun Matures III', desc: 'The sun brightens to 93% of today.', cost: 15000, sun: 0.93 },
-  { id: 'sun4', icon: 'sunicon', tab: 'sun', step: 5, name: 'Sun Matures IV', desc: 'The sun reaches today\'s brightness.', cost: 80000, sun: 1 },
-  { id: 'spots', icon: 'sunicon', tab: 'sun', step: 2, name: 'Sunspot Cycle', desc: 'Sun taps x3.', cost: 6000, tapMult: 3 },
-  { id: 'evap', icon: 'cloud', tab: 'ocean', step: 3, name: 'Evaporation', desc: 'Clouds form 50% faster.', cost: 3000, cloudMult: 1.5 },
-  { id: 'downpour', icon: 'cloud', tab: 'ocean', step: 3, name: 'Downpour', desc: 'Rain washes out 3x minerals.', cost: 1500, rainMult: 3 },
-  { id: 'bigbolt', icon: 'bolt', tab: 'ocean', step: 4, name: 'Bigger Bolts', desc: 'Lightning adds 2x soup.', cost: 4000, boltMult: 2 },
-  { id: 'cosmic', icon: 'sunicon', tab: 'sun', step: 6, name: 'Cosmic Rays', desc: 'Sun taps cause mutations: +1 DNA per tap.', cost: 8000, tapDna: 1 },
-  { id: 'tides', icon: 'wave', tab: 'ocean', step: 6, name: 'Tidal Pools', desc: 'Ocean life makes 2x DNA.', cost: 30000, dnaMult: { ocean: 2 } },
+  // Sun: fusion makes the energy, maturing makes the light.
+  { id: 'stable', icon: 'sunicon', tab: 'sun', step: 1, name: 'Stable Core', desc: 'Fusion settles into a steady burn: 10 E/s.', cost: 40, fusion: 10 },
+  { id: 'pp', icon: 'sunicon', tab: 'sun', step: 1, requires: 'stable', name: 'Proton-proton Chain', desc: 'Hydrogen fuses to helium step by step, as in the real sun: 30 E/s.', cost: 400, fusion: 30 },
+  { id: 'cno', icon: 'sunicon', tab: 'sun', step: 2, requires: 'pp', name: 'CNO Cycle', desc: 'Carbon, nitrogen and oxygen help fusion along: 100 E/s.', cost: 5000, fusion: 100 },
+  { id: 'sun1', icon: 'sunicon', tab: 'sun', step: 1, name: 'Sun Matures I', desc: 'The young sun brightens: 70% to 78% of today. Warms the planet.', cost: 300, sun: 0.78 },
+  { id: 'sun2', icon: 'sunicon', tab: 'sun', step: 1, requires: 'sun1', name: 'Sun Matures II', desc: 'The sun brightens to 86% of today.', cost: 3000, sun: 0.86 },
+  { id: 'sun3', icon: 'sunicon', tab: 'sun', step: 2, requires: 'sun2', name: 'Sun Matures III', desc: 'The sun brightens to 93% of today.', cost: 20000, sun: 0.93 },
+  { id: 'sun4', icon: 'sunicon', tab: 'sun', step: 5, requires: 'sun3', name: 'Sun Matures IV', desc: 'The sun reaches today\'s brightness.', cost: 100000, sun: 1 },
+  { id: 'uv', icon: 'sunicon', tab: 'sun', step: 5, name: 'UV Mutations', desc: 'Sunlight nudges DNA: all life makes 25% more DNA.', cost: 8000, dnaMult: { all: 1.25 } },
+  // Air: choose what to thaw, then weather.
+  { id: 'thawN2', icon: 'cloud', tab: 'atmosphere', step: 0, minK: 63, name: 'Thaw Nitrogen', desc: 'Thicker air: every greenhouse gas works better, and clouds can form later.', cost: 5, thaw: 'n2' },
+  { id: 'thawCH4', icon: 'cloud', tab: 'atmosphere', step: 0, minK: 112, name: 'Thaw Methane', desc: 'Fast, strong warming, but an orange haze dims the sun. Oxygen from life destroys it later.', cost: 15, thaw: 'ch4' },
+  { id: 'thawCO2', icon: 'cloud', tab: 'atmosphere', step: 0, minK: 195, name: 'Thaw CO₂', desc: 'Steady, long-lasting warming that volcanoes and weathering control later.', cost: 40, thaw: 'co2' },
+  { id: 'evap', icon: 'cloud', tab: 'atmosphere', step: 3, name: 'Evaporation', desc: 'Clouds form 50% faster.', cost: 3000, cloudMult: 1.5 },
+  { id: 'downpour', icon: 'cloud', tab: 'atmosphere', step: 3, name: 'Downpour', desc: 'Rain washes out 3x minerals.', cost: 1500, rainMult: 3 },
+  { id: 'bigbolt', icon: 'bolt', tab: 'atmosphere', step: 4, name: 'Bigger Bolts', desc: 'Lightning adds 2x soup.', cost: 4000, boltMult: 2 },
+  // Core: the planet's insides.
+  { id: 'plates', icon: 'vent', tab: 'core', step: 2, name: 'Plate Tectonics', desc: 'Fresh rock keeps weathering going: the CO₂ thermostat works 50% harder.', cost: 1500, weatherMult: 1.5 },
+  { id: 'magnet', icon: 'vent', tab: 'core', step: 2, name: 'Magnetic Field', desc: 'A molten iron core shields the air from the solar wind. Without it, the air slowly leaks away.', cost: 4000, shield: true },
+  // Moon: wake it first by tapping it.
+  { id: 'tides', icon: 'wave', tab: 'moon', step: 2, name: 'Tides', desc: 'The ocean mixes heat toward the poles: ice retreats 2°C sooner.', cost: 200, tideShift: 2 },
+  { id: 'pools', icon: 'wave', tab: 'moon', step: 2, requires: 'tides', name: 'Tidal Pools', desc: 'Pools left by the tide concentrate chemicals: lightning makes 2x soup.', cost: 1500, boltMult: 2 },
+  { id: 'tilt', icon: 'wave', tab: 'moon', step: 2, requires: 'pools', name: 'Stable Tilt', desc: 'The moon steadies the planet\'s tilt: species die back half as fast outside their range.', cost: 8000, tilt: true },
+  // Ocean and land life.
+  { id: 'shallows', icon: 'wave', tab: 'ocean', step: 6, name: 'Shallow Seas', desc: 'Ocean life makes 2x DNA.', cost: 30000, dnaMult: { ocean: 2 } },
   { id: 'soil', icon: 'plant', tab: 'ground', step: 7, name: 'First Soil', desc: 'Land life makes 2x DNA.', cost: 3e5, dnaMult: { ground: 2 } },
 ];
+const UPGRADE_BY_ID = Object.fromEntries(UPGRADES.map(u => [u.id, u]));
+const MOON_WAKE_TAPS = 20;
+const IGNITION_TAPS = 80;
 
 // The tree of life for this slice. Habitat (domain) decides which step a species needs.
 // dna and o2 are per second at full population. temp is the global mean range (°C) the species can live in.
@@ -132,6 +151,7 @@ const freshState = () => ({
   ice: 1,           // share of the planet under ice; follows temperature with a lag
   gases: 0,         // how many gas thaw events have happened
   volcanoActivity: 1,
+  moonWake: 0,      // 0..1, how awake the moon is
   clouds: 0,
   minerals: 0,
   soup: 0,
@@ -197,8 +217,28 @@ function mult(key) {
   return UPGRADES.reduce((m, u) => (owned.has(u.id) && u[key] ? m * u[key] : m), 1);
 }
 
-const tapPower = () => mult('tapMult');
+const has = id => owned.has(id);
 const soupMult = () => (1 + Math.log10(1 + state.minerals)) * mult('boltMult');
+
+// Energy from fusion once the sun is lit: the best fusion upgrade owned, 3 E/s at plain ignition.
+function fusionRate() {
+  if (state.ignition < 1) return 0;
+  return UPGRADES.reduce((r, u) => (has(u.id) && u.fusion ? Math.max(r, u.fusion) : r), 3);
+}
+
+// A component is complete when all its upgrades are owned; the sun and moon then move to the background.
+const componentDone = tab => UPGRADES.filter(u => u.tab === tab).every(u => has(u.id));
+const moonAwake = () => state.moonWake >= 1;
+
+// Why an upgrade cannot be bought yet, or '' if it can.
+function upgradeLock(u) {
+  if (u.requires && !has(u.requires)) return `Needs ${UPGRADE_BY_ID[u.requires].name}`;
+  if (u.minK && state.tempK < u.minK) return `Can thaw at ${(u.minK - KELVIN).toFixed(0)}°C`;
+  if (u.tab === 'moon' && !moonAwake()) return 'Wake the moon first: tap it';
+  return '';
+}
+
+const methaneHaze = () => clamp01(state.ch4 / 15) * (1 - clamp01(state.o2));
 
 // Sun brightness as a share of today's: rises to 70% while igniting (cubed, so the first glow is faint),
 // then the "Sun Matures" upgrades brighten it toward today's level, as the real sun did.
@@ -208,7 +248,7 @@ function sunBrightness() {
 }
 
 // Ice the planet settles toward at a temperature. Water first opens at 0 °C; ice sheets are gone at about 22 °C.
-function iceTarget(c = tempC() + Math.min(4, count('current') * 0.4)) {
+function iceTarget(c = tempC() + Math.min(4, count('current') * 0.4) + (has('tides') ? 2 : 0)) {
   if (c <= 0) return 1;
   if (c <= 14) return 1 - 0.9 * Math.sqrt(c / 14);
   return Math.max(0, 0.1 * (1 - (c - 14) / 8));
@@ -223,8 +263,9 @@ const volcanoes = () => count('volcano') * state.volcanoActivity;
 // sunlight absorbed (less what ice, clouds and dust reflect) plus the greenhouse effect of the air.
 function climate() {
   const ice = iceCover();
-  const dust = state.step >= 1 ? Math.min(0.8, volcanoes() * 0.04) : 0;
-  const albedo = 0.22 + 0.43 * ice * (1 - 0.5 * dust) + 0.08 * state.clouds;
+  const dust = state.step >= 1 ? Math.min(0.8, volcanoes() * BUILDINGS[0].dust) : 0;
+  // Methane haze without oxygen reflects sunlight too (like Titan's haze).
+  const albedo = 0.22 + 0.43 * ice * (1 - 0.5 * dust) + 0.08 * state.clouds + 0.1 * methaneHaze();
   const sunK = 255 * Math.pow(Math.max(0, sunBrightness() * (1 - albedo) / 0.7), 0.25);
   const bare = Math.pow(sunK ** 4 + CORE_K ** 4, 0.25);
   // Greenhouse: each doubling of CO2 adds a few degrees; thin air holds less heat; water vapor amplifies it.
@@ -234,24 +275,23 @@ function climate() {
 }
 
 function recalc() {
-  const r = { energy: 0, ignition: 0, co2: 0, ch4: 0, minerals: 0, lightning: 0, dna: 0, o2: 0, clouds: 0, green: 0, life: 0, photo: 0 };
+  const r = { energy: fusionRate(), co2: 0, ch4: 0, minerals: 0, lightning: 0, dna: 0, o2: 0, clouds: 0, green: 0, life: 0 };
   for (const b of BUILDINGS) {
     const n = count(b.id);
-    r.energy += (b.energy || 0) * n;
-    r.ignition += (b.ignition || 0) * n;
     r.minerals += (b.minerals || 0) * n;
     r.lightning += (b.lightning || 0) * n;
     r.ch4 += (b.ch4 || 0) * n;
   }
   // Volcanoes: a little natural outgassing always, plus the player's volcanoes.
-  if (state.step >= 1) r.co2 += (2 + volcanoes() * 8);
+  if (state.step >= 1) r.co2 += (2 + volcanoes() * BUILDINGS[0].co2);
   // Evaporation from open water, faster when the air is warm.
-  if (state.step >= 3) r.clouds = 0.03 * openOcean() * Math.max(0, tempC() / 14 + 0.3) * mult('cloudMult');
+  // Thin air holds little water vapor, so clouds need a thick (nitrogen) atmosphere.
+  if (state.step >= 3) r.clouds = 0.03 * openOcean() * Math.max(0, tempC() / 14 + 0.3) * mult('cloudMult') * Math.max(0.3, state.pressure);
 
   for (const s of SPECIES) {
     const p = pop(s.id);
     if (p < 0) continue;
-    const dnaMult = UPGRADES.reduce((m, u) => (owned.has(u.id) && u.dnaMult?.[s.domain] ? m * u.dnaMult[s.domain] : m), 1);
+    const dnaMult = UPGRADES.reduce((m, u) => (has(u.id) && u.dnaMult ? m * (u.dnaMult[s.domain] ?? u.dnaMult.all ?? 1) : m), 1);
     r.dna += s.dna * p * dnaMult;
     r.o2 += (s.o2 || 0) * p;
     if (s.green) r.green += s.green * p;
@@ -276,17 +316,17 @@ function fitness(s, c) {
 // Advance the world by dt seconds.
 function simulate(dt) {
   addEnergy(rates.energy * dt);
-  state.ignition = Math.min(1, state.ignition + rates.ignition * dt);
 
-  // Frozen gases turn into air at their real temperatures.
-  const k = state.tempK;
-  if (k >= 77) state.pressure = Math.min(1, state.pressure + 0.08 * dt);
-  if (k >= 112 && state.ch4Ice > 0) {
+  // Thawed gases turn into air (the player chose which ones in the Air panel).
+  if (has('thawN2')) state.pressure = Math.min(1, state.pressure + 0.08 * dt);
+  // Without a magnetic field the solar wind slowly strips the air away, as it did on Mars.
+  if (state.step >= 3 && !has('magnet')) state.pressure = Math.max(0.2, state.pressure - 0.0003 * dt);
+  if (has('thawCH4') && state.ch4Ice > 0) {
     const out = Math.min(state.ch4Ice, 2 * dt);
     state.ch4Ice -= out;
     state.ch4 += out;
   }
-  if (k >= 195 && state.co2Ice > 0) {
+  if (has('thawCO2') && state.co2Ice > 0) {
     const out = Math.min(state.co2Ice, 120 * dt);
     state.co2Ice -= out;
     state.co2 += out;
@@ -295,7 +335,7 @@ function simulate(dt) {
   // Carbon cycle: volcanoes add CO2; rock weathering removes it when warm and wet (the planet's thermostat);
   // photosynthesis removes it too. Oxygen destroys methane.
   const c = tempC(), open = 1 - iceCover();
-  const weathering = 0.002 * state.co2 * Math.max(0, c / 15) ** 1.5 * open;   // speeds up sharply in the heat
+  const weathering = 0.002 * state.co2 * Math.max(0, c / 15) ** 1.5 * open * mult('weatherMult');   // speeds up sharply in the heat
   const photosynthesis = rates.o2 * 1500 * state.co2 / (state.co2 + 1000);   // slows when CO2 runs low
   state.co2 = Math.max(0, state.co2 + (rates.co2 - weathering - photosynthesis) * dt);
   state.ch4 = Math.max(0, state.ch4 + (rates.ch4 - state.ch4 * 0.03 * clamp01(state.o2)) * dt);
@@ -317,7 +357,7 @@ function simulate(dt) {
     const p = state.species[id];
     if (p < 0) continue;
     const f = fitness(SPECIES_BY_ID[id], c);
-    const next = f > 0 ? Math.min(1, p + p * (1 - p) * 0.25 * dt) : p * (1 + f * 0.15 * dt);
+    const next = f > 0 ? Math.min(1, p + p * (1 - p) * 0.25 * dt) : p * (1 + f * (has('tilt') ? 0.075 : 0.15) * dt);
     if (next < 0.005) {
       state.species[id] = -2;
       state.extinct.push(id);
@@ -399,7 +439,7 @@ function showGameOver() {
 function checkSteps() {
   const c = tempC();
   const ready = [
-    () => state.ignition >= 1 && state.co2Ice <= 0 && c >= -45,
+    () => state.ignition >= 1,
     () => c >= 0,
     () => openOcean() >= 0.3,
     () => state.clouds >= STORM_CLOUDS,
@@ -459,7 +499,7 @@ const tabKeys = {};
 function tabEntries(tab) {
   const entries = [];
   for (const b of BUILDINGS) if (b.tab === tab && state.step >= b.step) entries.push({ kind: 'building', item: b });
-  for (const u of UPGRADES) if (u.tab === tab && state.step >= u.step && !owned.has(u.id)) entries.push({ kind: 'upgrade', item: u });
+  for (const u of UPGRADES) if (u.tab === tab && state.step >= u.step && !has(u.id)) entries.push({ kind: 'upgrade', item: u });
   for (const s of SPECIES) {
     if (speciesTab(s) !== tab) continue;
     const reachable = s.parent && state.step >= DOMAIN_STEP[s.domain] && (evolved(s.parent) || isExtinct(s.parent));
@@ -473,29 +513,33 @@ function meterHtml(label, cls) {
 }
 
 function headHtml(tab) {
+  const goal = '<p class="goal"></p>';
   if (tab === 'sun') {
-    return `<p class="goal"></p>
-      ${state.step === 0 ? meterHtml('Sun ignition', 'm-ignite') : meterHtml('Sun brightness', 'm-sun')}
-      <p class="note m-air"></p>
+    return `${goal}${state.step === 0 ? meterHtml('Ignition', 'm-ignite') : meterHtml('Sun brightness', 'm-sun')}<p class="note m-fusion"></p>`;
+  }
+  if (tab === 'moon') return `${goal}${meterHtml('Moon', 'm-moon')}<p class="note m-moon-note"></p>`;
+  if (tab === 'atmosphere') return `${goal}<p class="note m-air"></p>`;
+  if (tab === 'core') {
+    return `${goal}<p class="note m-core"></p>
       ${count('volcano') ? `<div class="meter-row"><span>Volcanic activity</span><b class="m-volc-v"></b></div>
         <input class="slider" id="volcano-activity" type="range" min="0" max="100" step="5">` : ''}`;
   }
   if (tab === 'ocean') {
-    return `<p class="goal"></p>
+    return `${goal}
       ${meterHtml('Open ocean', 'm-open')}
       ${state.step >= 3 ? meterHtml('Clouds', 'm-clouds') : ''}
       ${state.step >= 4 ? meterHtml('Primordial soup', 'm-soup') : ''}
       ${state.step >= 6 ? meterHtml('Ozone layer', 'm-ozone') : ''}
       ${state.step >= 3 ? '<p class="note m-minerals"></p>' : ''}`;
   }
-  return '<p class="goal"></p>';
+  return goal;
 }
 
 function renderTab(tab, force = false) {
   const root = $(`#${tab}`);
   if (!root || tab === 'world' || tab === 'life') return;
   const entries = tabEntries(tab);
-  const key = `${state.step}|${count('volcano') > 0}|${entries.map(e => e.item.id + pop(e.item.id)).join()}`.replace(/0\.\d+/g, 'a');
+  const key = `${state.step}|${count('volcano') > 0}|${moonAwake()}|${entries.map(e => e.item.id + pop(e.item.id)).join()}`.replace(/0\.\d+/g, 'a');
   if (force || tabKeys[tab] !== key) {
     tabKeys[tab] = key;
     root.innerHTML = `<div class="domain-head">${headHtml(tab)}</div><ul class="list"></ul>`;
@@ -533,8 +577,6 @@ function setMeter(root, cls, value, text) {
 
 function buildingMeta(b) {
   const parts = [];
-  if (b.energy) parts.push(`+${fmt(b.energy)} E/s`);
-  if (b.ignition) parts.push('keeps the sun igniting');
   if (b.co2) parts.push(`+${b.co2} ppm CO₂/s`);
   if (b.iceShift) parts.push('ice retreats sooner');
   if (b.minerals) parts.push(`+${b.minerals} minerals/s`);
@@ -547,11 +589,27 @@ const parentReady = s => pop(s.parent) >= 0.5;
 function updateTab(tab, root) {
   const goal = root.querySelector('.goal');
   if (goal) goal.textContent = `Goal: ${STEPS[state.step].goal}`;
+  const note = (cls, text) => {
+    const n = root.querySelector(`.${cls}`);
+    if (n) n.textContent = text;
+  };
   if (tab === 'sun') {
     setMeter(root, 'm-ignite', state.ignition);
     setMeter(root, 'm-sun', sunBrightness(), `${pct(sunBrightness())} of today`);
-    const air = root.querySelector('.m-air');
-    if (air) air.textContent = `Air: ${state.pressure.toFixed(2)} bar · CO₂ ${fmt(state.co2)} ppm · methane ${state.ch4.toFixed(1)} ppm · greenhouse +${rates.climate.greenhouse.toFixed(0)}°C`;
+    note('m-fusion', state.ignition < 1
+      ? 'Each tap fuses hydrogen into helium and squeezes the core hotter.'
+      : `Fusion: ${fmt(fusionRate())} E/s.${componentDone('sun') ? ' The sun is complete and rests in the background.' : ''}`);
+  }
+  if (tab === 'moon') {
+    setMeter(root, 'm-moon', state.moonWake, moonAwake() ? 'Awake' : `${Math.round(state.moonWake * MOON_WAKE_TAPS)} / ${MOON_WAKE_TAPS} taps`);
+    note('m-moon-note', moonAwake() ? (componentDone('moon') ? 'The moon is complete and rests in the background.' : 'The moon pulls on the ocean.') : 'Tap the moon to wake it.');
+  }
+  if (tab === 'atmosphere') {
+    const frozen = [state.ch4Ice > 0 && 'methane', state.co2Ice > 0 && 'CO₂', !has('thawN2') && 'nitrogen'].filter(Boolean);
+    note('m-air', `Air ${state.pressure.toFixed(2)} bar · CO₂ ${fmt(state.co2)} ppm · methane ${state.ch4.toFixed(1)} ppm · greenhouse +${rates.climate.greenhouse.toFixed(0)}°C${frozen.length ? ` · still frozen: ${frozen.join(', ')}` : ''}`);
+  }
+  if (tab === 'core') {
+    note('m-core', `Volcanoes add ${fmt(rates.co2)} ppm CO₂/s.${state.step >= 3 && !has('magnet') ? ' No magnetic field: the solar wind is stripping the air.' : ''}`);
     const v = root.querySelector('.m-volc-v');
     if (v) v.textContent = pct(state.volcanoActivity);
   }
@@ -575,9 +633,11 @@ function updateTab(tab, root) {
       q('.count').textContent = count(item.id) || '';
       q('.cost').textContent = `${fmt(cost)} E`;
     } else if (e.kind === 'upgrade') {
-      li.className = 'item' + (state.energy >= item.cost ? ' affordable' : '');
+      const lock = upgradeLock(item);
+      li.className = 'item' + (state.energy >= item.cost && !lock ? ' affordable' : '');
       q('.name').textContent = item.name;
       q('.desc').textContent = item.desc;
+      q('.meta').textContent = lock;
       q('.cost').textContent = `${fmt(item.cost)} E`;
     } else {
       const p = pop(item.id), range = `${item.temp[0]} to ${item.temp[1]}°C`;
@@ -626,9 +686,13 @@ function buy(e) {
     state.energy -= cost;
     state.buildings[item.id] = count(item.id) + n;
   } else if (e.kind === 'upgrade') {
-    if (owned.has(item.id) || state.energy < item.cost) return;
+    if (has(item.id) || state.energy < item.cost || upgradeLock(item)) return;
     state.energy -= item.cost;
     owned.add(item.id);
+    if (['sun', 'moon'].includes(item.tab) && componentDone(item.tab)) {
+      toast(`${item.tab === 'sun' ? 'Sun' : 'Moon'} complete`, 'It moves to the background and keeps its effects.');
+      renderTabs();
+    }
   } else {
     if (evolved(item.id) || isExtinct(item.id) || state.dna < item.cost || !parentReady(item)) return;
     state.dna -= item.cost;
@@ -644,19 +708,23 @@ function buy(e) {
 
 let currentTab = 'sun';
 
+// Tabs appear as components unlock; a completed sun or moon leaves the bar (tap the body itself to open it).
 function renderTabs() {
   document.querySelectorAll('#tabs button').forEach(btn => {
-    btn.classList.toggle('locked', state.step < TABS[btn.dataset.tab].step);
+    const tab = btn.dataset.tab;
+    const done = (tab === 'sun' || tab === 'moon') && componentDone(tab) && currentTab !== tab;
+    btn.classList.toggle('hidden', !TABS[tab].unlocked() || done);
   });
 }
 
 function openTab(tab, expand = true) {
-  if (state.step < TABS[tab].step) {
+  if (!TABS[tab].unlocked()) {
     showNews(TABS[tab].hint);
     toast('Locked', TABS[tab].hint);
     return;
   }
   currentTab = tab;
+  renderTabs();
   document.querySelectorAll('#tabs button').forEach(n => n.classList.toggle('active', n.dataset.tab === tab));
   document.querySelectorAll('.tab').forEach(n => n.classList.toggle('active', n.id === tab));
   $('#buy-amount').classList.toggle('hidden', !BUILDINGS.some(b => b.tab === tab && state.step >= b.step));
@@ -819,7 +887,7 @@ function tempColor(c) {
 }
 
 function tempCaption(c) {
-  if (state.step === 0) return `${state.tempK.toFixed(0)} K · ${['Dark planet', 'Nitrogen melting', 'First air', 'Methane haze', 'CO₂ thawing'][state.gases]}`;
+  if (state.step === 0) return `${state.tempK.toFixed(0)} K · ${state.ignition < 0.05 ? 'Dark planet' : `Sun ignition ${pct(state.ignition)}`}`;
   if (state.step >= 5) {
     if (c < LIFE_WINDOW[0]) return `Too cold for complex life (${LIFE_WINDOW[0]}–${LIFE_WINDOW[1]}°C)`;
     if (c > LIFE_WINDOW[1]) return `Too hot for complex life (${LIFE_WINDOW[0]}–${LIFE_WINDOW[1]}°C)`;
@@ -848,22 +916,40 @@ function randomNews() {
 
 /* ================= Input ================= */
 
+// A sun tap is fusion: hydrogen nuclei collide in the core and become helium, releasing energy.
+// Before ignition, each tap squeezes the core hotter. Once lit, the sun burns on its own and a tap opens its panel.
 Scene.onSunTap((x, y) => {
-  const power = tapPower();
-  addEnergy(power);
   state.clicks++;
-  let text = `+${fmt(power)} E`;
+  Scene.fusion();
   if (state.ignition < 1) {
-    // Each tap pushes the sun closer to ignition.
-    state.ignition = Math.min(1, state.ignition + 0.008 * Math.sqrt(power));
-    text += ' · ignition';
+    state.ignition = Math.min(1, state.ignition + 1 / IGNITION_TAPS);
+    addEnergy(1);
+    floatText(x, y - 10, '+1 E · ignition');
+    buzz(6);
+    return;
   }
-  if (owned.has('cosmic')) {
-    state.dna += 1;
-    text += ' +1 DNA';
+  const bonus = Math.max(1, fusionRate() * 0.1);
+  addEnergy(bonus);
+  floatText(x, y - 10, `+${fmt(bonus)} E`);
+  Scene.ray();
+  openTab('sun');
+  buzz(6);
+});
+
+Scene.onMoonTap((x, y) => {
+  if (state.step < 2) {
+    toast('The moon is asleep', TABS.moon.hint);
+    return;
   }
-  floatText(x, y - 10, text);
-  if (sunBrightness() > 0.05) Scene.ray();
+  if (!moonAwake()) {
+    state.moonWake = Math.min(1, state.moonWake + 1 / MOON_WAKE_TAPS);
+    floatText(x, y - 10, moonAwake() ? 'Awake!' : 'zzz');
+    if (moonAwake()) {
+      toast('The moon wakes up', 'It pulls on the ocean. Open the Moon panel for tides.');
+      renderTabs();
+    }
+  }
+  openTab('moon');
   buzz(6);
 });
 
@@ -896,13 +982,17 @@ Scene.onCloudTap((kind, zone, x, y) => {
   buzz(4);
 });
 
+// Tapping the planet opens the component under your finger. Before the ocean and land open,
+// the frozen surface and bare rock lead to the Core (volcanoes).
 Scene.onZoneTap(zone => {
+  if (zone === 'ocean' && !TABS.ocean.unlocked()) zone = 'core';
+  if (zone === 'ground' && !TABS.ground.unlocked()) zone = 'core';
   openTab(zone);
   buzz(4);
 });
 
 Scene.onCometTap((x, y) => {
-  const reward = Math.max(rates.energy * 60, tapPower() * 30, 20);
+  const reward = Math.max(rates.energy * 60, 20);
   addEnergy(reward);
   state.comets++;
   let text = `+${fmt(reward)} energy`;
@@ -1002,7 +1092,10 @@ function updateScene(c) {
   // The scene's colors were tuned for big swings; a warm-but-livable planet should still look blue.
   Scene.setClimate(c < 14 ? c - 14 : (c - 14) * 0.4);
   Scene.setIce(iceCover());
-  Scene.setAtmosphere(state.pressure, clamp01(state.ch4 / 15) * (1 - clamp01(state.o2)), sunBrightness());
+  Scene.setAtmosphere(state.pressure, methaneHaze(), sunBrightness());
+  Scene.setOpening(state.step === 0 ? state.ignition ** 0.8 : 1);
+  Scene.setSunBackground(componentDone('sun'));
+  Scene.setMoon(state.step >= 1, state.moonWake, componentDone('moon'));
   const storms = state.step >= 4 ? Math.min(3, 1 + Math.floor((state.clouds - STORM_CLOUDS) * 10)) : 0;
   Scene.setClouds(state.step >= 3 ? state.clouds : 0, Math.max(0, storms));
   Scene.setLife(clamp01(rates.green), clamp01(rates.life / 6), ozone());

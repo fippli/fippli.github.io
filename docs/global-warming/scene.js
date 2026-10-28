@@ -43,8 +43,11 @@ const Scene = (() => {
   const texColors = new Uint32Array(TEX_W * TEX_H * 3);
 
   let W = 0, H = 0, P = 1, cx = 0, cy = 0, R = 0;
-  let sun = { x: 0, y: 0, r: 1 };
+  let sun = { x: 0, y: 0, r: 1 }, sunF = null;   // rounded position for drawing, smooth float position
   let sunBody = null, sunMood = null;
+  // Camera for the opening: zoom 0 = close on a giant sun, 1 = normal layout with the planet in view.
+  let zoom = 1, zoomTarget = 1, zoomSet = false, camY = 0, sunBg = false, layout = {};
+  let moon = { visible: false, wake: 0, bg: false, cur: null }, moonBody = null, moonKey = null;
   let bgImage, bgPixels, pixU, pixV, pixShade, pixAlt, pixDither, stars = [], slots = [];
   let skyColors = [], spaceColor = 0, atmosphere = 10;
   let climate = null, smog = 0, spin = 0, lastBg = -1e9, currentSea = seaThreshold;
@@ -54,7 +57,7 @@ const Scene = (() => {
   let clouds = [], cloudCover = 0, storms = 0;
   let particles = [], bolts = [], smokeRate = 0, smokeTimer = 0;
   let sunPress = 0, comet = null;
-  let onSun = () => {}, onZone = () => {}, onCloud = () => {}, onComet = () => {};
+  let onSun = () => {}, onZone = () => {}, onCloud = () => {}, onComet = () => {}, onMoon = () => {};
 
   /* ---------- helpers ---------- */
 
@@ -141,10 +144,16 @@ const Scene = (() => {
     return cy - Math.sqrt(Math.max(0, R * R - (x - cx) ** 2));
   }
 
-  // Which domain is drawn at a logical pixel: the sky, or ocean or land on the turning planet.
+  // Surface height on screen, including the opening camera offset.
+  function groundY(x) {
+    return surfaceY(x) + camY;
+  }
+
+  // Which domain is drawn at a screen pixel: the sky, or ocean or land on the turning planet.
   function zoneAt(x, y) {
-    const ix = Math.floor(x), iy = Math.floor(y);
-    if (ix < 0 || iy < 0 || ix >= W || iy >= H) return null;
+    const ix = Math.floor(x), iy = Math.floor(y - camY);
+    if (ix < 0 || ix >= W || y < 0 || y >= H) return null;
+    if (iy < 0) return 'atmosphere';
     const i = iy * W + ix;
     if (pixU[i] < 0) return 'atmosphere';
     const u = ((pixU[i] * TEX_W + spin * TEX_W) | 0) % TEX_W;
@@ -219,10 +228,15 @@ const Scene = (() => {
     cx = W / 2;
     cy = H / 2 + R;
     // The sun sits on the right, within thumb reach, inside the same column as the UI on wide screens.
-    const r = Math.round(Math.min(W * 0.1, H * 0.055));
-    const columnRight = (vw + Math.min(vw, 520)) / 2 / P;
-    sun = { x: Math.round(columnRight - r - 14), y: Math.round(H * 0.33), r };
-    sunMood = null;
+    // The sun sits on the right, within thumb reach, inside the same column as the UI on wide screens.
+    const rn = Math.round(Math.min(W * 0.1, H * 0.055)), column = Math.min(vw, 520) / P;
+    layout = {
+      rn, rb: Math.round(rn * 0.6), rm: Math.round(rn * 0.55), rmb: Math.round(rn * 0.4),
+      colRight: (W + column) / 2, colLeft: (W - column) / 2,
+    };
+    sunF = sunTarget();
+    moon.cur = moonTarget();
+    sunMood = moonKey = null;
 
     bgImage = bgCtx.createImageData(W, H);
     bgPixels = new Uint32Array(bgImage.data.buffer);
@@ -366,8 +380,72 @@ const Scene = (() => {
     return c;
   }
 
+  function sunTarget() {
+    const e = smooth(clamp01(zoom));
+    const n = sunBg
+      ? { x: layout.colRight - layout.rb - 10, y: H * 0.21, r: layout.rb }
+      : { x: layout.colRight - layout.rn - 14, y: H * 0.33, r: layout.rn };
+    const big = { x: W / 2, y: H * 0.42, r: Math.min(W, H * 0.6) * 0.42 };
+    return { x: lerp(big.x, n.x, e), y: lerp(big.y, n.y, e), r: lerp(big.r, n.r, e) };
+  }
+
+  function moonTarget() {
+    return moon.bg
+      ? { x: layout.colLeft + layout.rmb + 12, y: H * 0.2, r: layout.rmb }
+      : { x: layout.colLeft + layout.rm + 16, y: H * 0.24, r: layout.rm };
+  }
+
+  // Moves the sun and moon smoothly toward where they belong (opening zoom, background mode).
+  function updateBodies(dt) {
+    zoom += (zoomTarget - zoom) * Math.min(1, dt * 3);
+    camY = Math.round(lerp(H * 0.62, 0, smooth(clamp01(zoom))));
+    const k = Math.min(1, dt * 4), t = sunTarget(), m = moonTarget();
+    for (const key of ['x', 'y', 'r']) {
+      sunF[key] += (t[key] - sunF[key]) * k;
+      moon.cur[key] += (m[key] - moon.cur[key]) * k;
+    }
+    sun = { x: Math.round(sunF.x), y: Math.round(sunF.y), r: Math.max(2, Math.round(sunF.r)) };
+  }
+
+  function renderMoonBody(r, wake) {
+    const size = r * 2 + 3, c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d'), m = size / 2, rand = rng(5);
+    const base = mix([58, 58, 72], [208, 208, 220], wake);
+    const craters = Array.from({ length: 5 }, () => ({ x: (rand() - 0.5) * r * 1.2, y: (rand() - 0.5) * r * 1.2, r: 1 + rand() * r * 0.25 }));
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const dx = x + 0.5 - m, dy = y + 0.5 - m;
+        if (Math.hypot(dx, dy) > r) continue;
+        // Lit from the right, where the sun is.
+        let f = 0.75 + 0.35 * (dx / r) + BAYER[(y & 3) * 4 + (x & 3)] * 0.12;
+        if (craters.some(k => Math.hypot(dx - k.x, dy - k.y) < k.r)) f -= 0.18;
+        g.fillStyle = css(base.map(v => v * Math.max(0.4, Math.min(1.15, f))));
+        g.fillRect(x, y, 1, 1);
+      }
+    }
+    // Asleep: closed eyes. Awake: open eyes and a small smile.
+    g.fillStyle = wake >= 1 ? '#3a3a4a' : '#24242e';
+    const ex = Math.max(2, Math.round(r * 0.35)), ey = Math.round(m - r * 0.15);
+    const eyeH = wake >= 1 ? 2 : 1;
+    g.fillRect(Math.round(m - ex - 1), ey + (2 - eyeH), 2, eyeH);
+    g.fillRect(Math.round(m + ex - 1), ey + (2 - eyeH), 2, eyeH);
+    if (wake >= 1) g.fillRect(Math.round(m - 2), Math.round(m + r * 0.35), 4, 1);
+    return c;
+  }
+
+  function drawMoon() {
+    if (!moon.visible) return;
+    const r = Math.max(2, Math.round(moon.cur.r)), key = `${r}|${Math.round(moon.wake * 10)}`;
+    if (key !== moonKey) {
+      moonKey = key;
+      moonBody = renderMoonBody(r, moon.wake);
+    }
+    ctx.drawImage(moonBody, Math.round(moon.cur.x - moonBody.width / 2), Math.round(moon.cur.y - moonBody.height / 2));
+  }
+
   function drawSun(now, dt) {
-    const mood = climate > 8 ? 1 : climate < -40 ? -1 : 0, key = `${mood}|${Math.round(sunBright * 20)}`;
+    const mood = climate > 8 ? 1 : climate < -40 ? -1 : 0, key = `${mood}|${Math.round(sunBright * 20)}|${sun.r}`;
     if (key !== sunMood) {
       sunMood = key;
       sunBody = renderSunBody(mood, sunBright);
@@ -391,7 +469,7 @@ const Scene = (() => {
     const out = [];
     for (let k = 0; k < n; k++) {
       const c = clouds[k], storm = k < storms, w = c.w + (storm ? 6 : 0);
-      out.push({ cloud: c, storm, x: Math.round(c.x - w), y: Math.round(H / 2 - c.alt * Math.max(atmosphere, 40)), w });
+      out.push({ cloud: c, storm, x: Math.round(c.x - w), y: Math.round(H / 2 - c.alt * Math.max(atmosphere, 40) + camY), w });
     }
     return out;
   }
@@ -418,23 +496,23 @@ const Scene = (() => {
   // A zigzag bolt from a storm cloud down to the surface. Returns where it hit.
   function strike(v) {
     let x = v.x + Math.floor(v.w / 2), y = v.y + 4;
-    const groundY = Math.round(surfaceY(x)) + 2, points = [];
-    while (y < groundY) {
+    const hitY = Math.round(groundY(x)) + 2, points = [];
+    while (y < hitY) {
       points.push([x, y]);
       y += 1;
       if (Math.random() < 0.35) x += Math.random() < 0.5 ? -1 : 1;
     }
     bolts.push({ points, life: 0.25 });
     for (let k = 0; k < 6; k++) {
-      particles.push({ x, y: groundY - 2, vx: (Math.random() - 0.5) * 40, vy: -Math.random() * 30, life: 0.4, max: 0.4, size: 1, color: '#fff3a0' });
+      particles.push({ x, y: hitY - 2, vx: (Math.random() - 0.5) * 40, vy: -Math.random() * 30, life: 0.4, max: 0.4, size: 1, color: '#fff3a0' });
     }
-    return { zone: zoneAt(x, groundY), x: x * P, y: groundY * P };
+    return { zone: zoneAt(x, hitY), x: x * P, y: hitY * P };
   }
 
   function rain(v) {
     for (let k = 0; k < 14; k++) {
-      const x = v.x + 1 + Math.random() * (v.w - 2), groundY = surfaceY(x), time = 0.4 + Math.random() * 0.3;
-      particles.push({ x, y: v.y + 3, vx: 0, vy: (groundY - v.y - 3) / time, life: time, max: time, size: 1, color: '#7ab8ff' });
+      const x = v.x + 1 + Math.random() * (v.w - 2), hitY = groundY(x), time = 0.4 + Math.random() * 0.3;
+      particles.push({ x, y: v.y + 3, vx: 0, vy: (hitY - v.y - 3) / time, life: time, max: time, size: 1, color: '#7ab8ff' });
     }
   }
 
@@ -465,7 +543,7 @@ const Scene = (() => {
       ctx.drawImage(jet, Math.round(j.x), j.y);
       if (Math.random() < 0.6) particles.push({ x: j.x, y: j.y + 2, vx: 0, vy: 0, life: 1.5, max: 1.5, size: 1, color: '#e8eef8' });
     }
-    for (const s of groundSprites) ctx.drawImage(Sprites.canvas(s.id), s.dx, s.dy);
+    for (const s of groundSprites) ctx.drawImage(Sprites.canvas(s.id), s.dx, s.dy + camY);
   }
 
   function drawComet(dt) {
@@ -528,7 +606,11 @@ const Scene = (() => {
       renderBackground();
       lastBg = now;
     }
-    ctx.drawImage(bg, 0, 0);
+    updateBodies(dt);
+    // During the opening the planet sits lower; fill the sky above it with the top of the background.
+    ctx.drawImage(bg, 0, camY);
+    if (camY > 0) ctx.drawImage(bg, 0, 0, W, camY, 0, 0, W, camY);
+    drawMoon();
     drawClouds(now, dt);
     drawSun(now, dt);   // in front of clouds, so it always stays visible and tappable
     drawBolts(dt);
@@ -552,6 +634,15 @@ const Scene = (() => {
       e.preventDefault();
       sunPress = 1;
       onSun(e.clientX, e.clientY);
+      return;
+    }
+    if (moon.visible && Math.hypot(x - moon.cur.x, y - moon.cur.y) <= moon.cur.r + 8) {
+      e.preventDefault();
+      for (let k = 0; k < 6; k++) {
+        const a = Math.random() * Math.PI * 2;
+        particles.push({ x: moon.cur.x, y: moon.cur.y, vx: Math.cos(a) * 20, vy: Math.sin(a) * 20, life: 0.4, max: 0.4, size: 1, color: '#e8e8f8' });
+      }
+      onMoon(e.clientX, e.clientY);
       return;
     }
     const hit = visibleClouds().find(v => x >= v.x - 3 && x <= v.x + v.w + 3 && y >= v.y - 6 && y <= v.y + 6);
@@ -642,8 +733,29 @@ const Scene = (() => {
       if (changed) layoutSprites();
       smokeRate = Math.min(12, Math.log10(perSecond + 1) * 2);
     },
+    // Two hydrogen nuclei collide inside the sun and flash into helium.
+    fusion() {
+      if (particles.length > 500) return;
+      const a = Math.random() * Math.PI * 2, d = sun.r * (0.3 + Math.random() * 0.4);
+      const mx = sun.x + Math.cos(a) * d * 0.5, my = sun.y + Math.sin(a) * d * 0.5, time = 0.25;
+      for (const side of [-1, 1]) {
+        const sx = mx + side * 5 * Math.cos(a + 1.3), sy = my + side * 5 * Math.sin(a + 1.3);
+        particles.push({
+          x: sx - 1, y: sy - 1, vx: (mx - sx) / time, vy: (my - sy) / time, life: time, max: time, size: 2,
+          color: side < 0 ? '#ff5a3a' : '#ffffff',
+          done: side < 0 ? out => {
+            // Helium: a brighter dot, and a few sparks of released energy.
+            out.push({ x: mx - 1, y: my - 1, vx: 0, vy: 0, life: 0.4, max: 0.4, size: 3, color: '#ffffff' });
+            for (let k = 0; k < 4; k++) {
+              const b = Math.random() * Math.PI * 2;
+              out.push({ x: mx, y: my, vx: Math.cos(b) * 25, vy: Math.sin(b) * 25, life: 0.3, max: 0.3, size: 1, color: '#fff3a0' });
+            }
+          } : null,
+        });
+      }
+    },
     ray() {
-      const tx = cx + (Math.random() - 0.5) * R * 0.9, ty = surfaceY(tx), time = 0.35;
+      const tx = cx + (Math.random() - 0.5) * R * 0.9, ty = groundY(tx), time = 0.35;
       particles.push({
         x: sun.x, y: sun.y, vx: (tx - sun.x) / time, vy: (ty - sun.y) / time, life: time, max: time,
         size: 2, color: '#fff3a0', trail: true,
@@ -668,6 +780,27 @@ const Scene = (() => {
     },
     onCometTap(fn) {
       onComet = fn;
+    },
+    onMoonTap(fn) {
+      onMoon = fn;
+    },
+    // Opening camera: 0 = close on the sun, 1 = normal layout. The first call jumps there directly.
+    setOpening(z) {
+      zoomTarget = z;
+      if (!zoomSet) {
+        zoomSet = true;
+        zoom = z;
+        sunF = sunTarget();
+      }
+    },
+    setSunBackground(b) {
+      sunBg = b;
+    },
+    // Moon: shown or not, how awake (0..1), and whether it has moved to the background.
+    setMoon(visible, wake, bg) {
+      moon.visible = visible;
+      moon.wake = wake;
+      moon.bg = bg;
     },
   };
 })();
