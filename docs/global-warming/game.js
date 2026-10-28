@@ -15,7 +15,8 @@ const OZONE_FOR_LAND = 0.6;
 const MAX_O2 = 21;
 const LIFE_WINDOW = [11, 36];      // global mean °C range of complex life over the last 485 million years
 const SUN_IGNITED = 0.7;           // the young sun shone at about 70% of today's brightness
-const THERMAL_LAG_S = 5;           // how fast temperature follows its target
+const THERMAL_LAG_S = 5;           // how fast temperature follows its target on an ice-covered planet
+const OCEAN_LAG_S = 60;            // extra lag once oceans are open: water takes long to heat
 
 // Frozen gases and the temperature (K) where they turn into air.
 const GASES = [
@@ -29,7 +30,7 @@ const GASES = [
 const STEPS = [
   { name: 'Light the sun', goal: 'Tap the dark sun until it ignites. Each gas thaws at its real temperature.' },
   { name: 'Melt ice', goal: 'Reach 0°C. Brighten the sun, and let volcanoes pump CO₂ and darken the ice with dust.', unlockText: 'The planet is a snowball under a real atmosphere. Melt it.' },
-  { name: 'Ocean', goal: 'Open 30% of the planet to water.', unlockText: 'Open water at 0°C! Tap the ocean to shape it.', tab: 'ocean' },
+  { name: 'Ocean', goal: 'Open 30% of the planet to water. Dark water absorbs sunlight, so the thaw speeds up: lower volcanic activity in the Sun tab to avoid a hothouse.', unlockText: 'Open water at 0°C! Dark water absorbs sunlight, so warming speeds up. Turn volcanic activity down in the Sun tab to avoid overheating.', tab: 'ocean' },
   { name: 'Clouds', goal: `Warm water evaporates. Build cloud cover to ${STORM_CLOUDS * 100}% so storms form. Tap clouds for rain: it washes minerals into the sea.`, unlockText: 'Water vapor rises. The first clouds form.' },
   { name: 'Thunder', goal: 'Tap storm clouds to strike lightning into the ocean. Fill the primordial soup.', unlockText: 'Storms! Tap a dark cloud to strike lightning.' },
   { name: 'Life', goal: 'The first cell is spreading through the ocean.', unlockText: 'Lightning in the soup made something... alive. The first cell!', tab: 'ocean' },
@@ -294,15 +295,16 @@ function simulate(dt) {
   // Carbon cycle: volcanoes add CO2; rock weathering removes it when warm and wet (the planet's thermostat);
   // photosynthesis removes it too. Oxygen destroys methane.
   const c = tempC(), open = 1 - iceCover();
-  const weathering = 0.002 * state.co2 * Math.max(0, c / 15) * open;
+  const weathering = 0.002 * state.co2 * Math.max(0, c / 15) ** 1.5 * open;   // speeds up sharply in the heat
   const photosynthesis = rates.o2 * 1500 * state.co2 / (state.co2 + 1000);   // slows when CO2 runs low
   state.co2 = Math.max(0, state.co2 + (rates.co2 - weathering - photosynthesis) * dt);
   state.ch4 = Math.max(0, state.ch4 + (rates.ch4 - state.ch4 * 0.03 * clamp01(state.o2)) * dt);
 
   // Temperature follows its target with a lag. Ice sheets grow and melt more slowly still.
-  state.tempK += (rates.climate.target - state.tempK) * Math.min(1, dt / THERMAL_LAG_S);
+  const lag = THERMAL_LAG_S + OCEAN_LAG_S * (1 - state.ice);
+  state.tempK += (rates.climate.target - state.tempK) * Math.min(1, dt / lag);
   const iceGoal = iceTarget();
-  state.ice += (iceGoal - state.ice) * Math.min(1, dt * (iceGoal > state.ice ? 0.01 : 0.05));
+  state.ice += (iceGoal - state.ice) * Math.min(1, dt * (iceGoal > state.ice ? 0.005 : 0.012));
 
   state.minerals += rates.minerals * dt;
   state.dna += rates.dna * dt;

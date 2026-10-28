@@ -6,7 +6,7 @@ const Scene = (() => {
   const TEX_W = 256;
   const TEX_H = 128;
   const TILT = 50 * Math.PI / 180;          // pole tipped away from the viewer, so the horizon is temperate
-  const LIGHT = norm([0.15, 0.9, 0.45]);    // the sun is above the planet
+  const LIGHT = norm([0.4, 0.85, 0.4]);     // the sun is above and to the right of the planet
   const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => v / 16 - 0.5);
   const SKY_BANDS = 8;
   const SPIN_SECONDS = 150;
@@ -218,7 +218,10 @@ const Scene = (() => {
     R = (W * W + H * H) / (4 * H);
     cx = W / 2;
     cy = H / 2 + R;
-    sun = { x: Math.round(W / 2), y: Math.round(H * 0.28), r: Math.round(Math.min(W * 0.1, H * 0.055)) };
+    // The sun sits on the right, within thumb reach, inside the same column as the UI on wide screens.
+    const r = Math.round(Math.min(W * 0.1, H * 0.055));
+    const columnRight = (vw + Math.min(vw, 520)) / 2 / P;
+    sun = { x: Math.round(columnRight - r - 14), y: Math.round(H * 0.33), r };
     sunMood = null;
 
     bgImage = bgCtx.createImageData(W, H);
@@ -526,8 +529,8 @@ const Scene = (() => {
       lastBg = now;
     }
     ctx.drawImage(bg, 0, 0);
-    drawSun(now, dt);
     drawClouds(now, dt);
+    drawSun(now, dt);   // in front of clouds, so it always stays visible and tappable
     drawBolts(dt);
     drawSprites(now, dt);
     drawComet(dt);
