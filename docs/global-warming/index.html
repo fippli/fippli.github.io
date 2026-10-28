@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#05060f">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Global Warming">
+  <title>Global Warming</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="scene" aria-label="Tap the sun to heat the planet"></canvas>
+
+  <div id="app">
+    <header id="hud">
+      <div id="temp" class="temp">-238.1°C</div>
+      <div id="temp-sub" class="temp-sub">35 K · Dark planet</div>
+      <div id="hud-line" class="hud-line"></div>
+    </header>
+
+    <div class="spacer"></div>
+
+    <div id="ticker"><span id="news">Tap the dark sun to light it.</span></div>
+
+    <section id="sheet">
+      <nav id="tabs">
+        <button data-tab="sun" class="active">Sun</button>
+        <button data-tab="ocean">Sea</button>
+        <button data-tab="ground">Land</button>
+        <button data-tab="atmosphere">Air</button>
+        <button data-tab="life">Life</button>
+        <button data-tab="world">World</button>
+      </nav>
+
+      <main id="panel">
+        <div id="buy-amount" class="buy-amount" role="group" aria-label="Buy amount">
+          <button data-amount="1" class="active">x1</button>
+          <button data-amount="10">x10</button>
+          <button data-amount="100">x100</button>
+          <button data-amount="max">Max</button>
+        </div>
+        <div id="sun" class="tab active"></div>
+        <div id="ocean" class="tab"></div>
+        <div id="ground" class="tab"></div>
+        <div id="atmosphere" class="tab"></div>
+        <div id="life" class="tab"></div>
+        <div id="world" class="tab">
+          <h3>Steps</h3>
+          <ul id="step-list" class="milestones"></ul>
+          <h3>Planet</h3>
+          <dl id="stats" class="stats"></dl>
+          <button id="reset" class="danger">Reset game</button>
+        </div>
+      </main>
+    </section>
+  </div>
+
+  <div id="gameover" class="hidden" role="dialog" aria-labelledby="gameover-title">
+    <div class="gameover-box">
+      <h2 id="gameover-title">Game over</h2>
+      <p id="gameover-reason"></p>
+      <dl id="gameover-stats" class="stats"></dl>
+      <button id="gameover-restart">Start a new planet</button>
+    </div>
+  </div>
+
+  <div id="fx"></div>
+  <div id="toasts"></div>
+
+  <script src="sprites.js"></script>
+  <script src="scene.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

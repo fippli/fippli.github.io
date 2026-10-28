@@ -1,0 +1,14 @@
+{
+  "name": "Global Warming",
+  "short_name": "Warming",
+  "description": "Tap the sun, pump oil, build factories. Cook the planet.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1026",
+  "theme_color": "#0b1026",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
