@@ -616,29 +616,28 @@ function meterHtml(label, cls) {
 }
 
 function headHtml(tab) {
-  const goal = '';
   if (tab === 'sun') {
-    return `${goal}${state.step === 0 ? meterHtml('Ignition', 'm-ignite') : meterHtml('Sun brightness', 'm-sun')}<p class="note m-fusion"></p>`;
+    return `${state.step === 0 ? meterHtml('Ignition', 'm-ignite') : meterHtml('Sun brightness', 'm-sun')}<p class="note m-fusion"></p>`;
   }
-  if (tab === 'moon') return `${goal}<p class="note m-moon-note"></p>`;
+  if (tab === 'moon') return '<p class="note m-moon-note"></p>';
   if (tab === 'atmosphere') {
     return `${has('clouds') ? meterHtml('Clouds', 'm-clouds') : ''}
       ${state.step >= 6 ? meterHtml('Ozone layer', 'm-ozone') : ''}
       <p class="note m-air"></p>`;
   }
-  if (tab === 'core') return `${goal}${meterHtml('Day', 'm-day')}<p class="note m-core"></p>`;
+  if (tab === 'core') return `${meterHtml('Day', 'm-day')}<p class="note m-core"></p>`;
   if (tab === 'land') {
     return `${state.eruptions ? meterHtml('Aerosols', 'm-aerosol') : ''}
       ${has('volcano') ? `<div class="meter-row"><span>Volcanic activity</span><b class="m-volc-v"></b></div>
         <input class="slider" id="volcano-activity" type="range" min="0" max="100" step="5">` : ''}`;
   }
   if (tab === 'ocean') {
-    return `${goal}
+    return `
       ${meterHtml('Open ocean', 'm-open')}
       ${state.step >= 4 ? meterHtml('Primordial soup', 'm-soup') : ''}
       ${state.step >= 3 ? '<p class="note m-minerals"></p>' : ''}`;
   }
-  return goal;
+  return '';
 }
 
 function renderTab(tab, force = false) {
@@ -801,7 +800,7 @@ function buildPanels() {
     const div = document.createElement('div');
     div.id = `cat-${c.id}`;
     div.className = 'tab';
-    div.innerHTML = `<p class="goal"></p>${c.sections.map(sec => `
+    div.innerHTML = `${c.sections.map(sec => `
       <section class="section" data-section="${sec}">
         <h3 class="section-title">${SECTIONS[sec].name}</h3>
         ${sec === 'world' ? '' : `<div id="${sec}"></div>`}
@@ -846,7 +845,6 @@ function renderRail() {
 // The light update skips the world stats and the tree of life, which have their own slower timers.
 function renderCategory(force = false, light = false) {
   const root = $(`#cat-${currentCat}`), visible = visibleSections(currentCat);
-  root.querySelector('.goal').textContent = `Goal: ${STEPS[state.step].goal}`;
   root.querySelectorAll('.section').forEach(n => {
     n.classList.toggle('hidden', !visible.includes(n.dataset.section));
     n.querySelector('.section-title').classList.toggle('hidden', visible.length < 2);

@@ -282,7 +282,6 @@ h3 { margin: 12px 4px 8px; font-family: var(--pixel-font); font-size: 10px; font
 /* ---------- Early game ---------- */
 
 
-.goal { margin: 0 0 8px; font-size: 18px; color: var(--text); }
 .note { margin: 6px 0 0; font-size: 17px; color: var(--muted); }
 .hud-line small { color: var(--muted); font-size: 16px; }
 .item.alive { opacity: 1; border-color: #2f6a4a; }
