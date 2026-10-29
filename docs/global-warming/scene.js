@@ -55,6 +55,10 @@ const Scene = (() => {
   let climate = null, smog = 0, spin = 0, lastBg = -1e9, currentSea = seaThreshold;
   let landLife = 0, oceanLife = 0, ozone = 0, land = 0.3, mountains = 0, aerosols = 0;
   let iceCoverValue = 1, pressure = 0, haze = 0, sunBright = 1;
+  // Volcanoes on the planet's visible edge: tap a glowing one to make it erupt; it then cools for a while.
+  const VOLCANO_SPOTS = [0.42, 0.68, 0.28, 0.56, 0.8];
+  const VOLCANO_COOL_S = 8;
+  let volcanoes = [], onVolcanoFn = () => {};
   let counts = {}, groundSprites = [], skySprites = [], jetCount = 0, jets = [], jetTimer = 0;
   let clouds = [], cloudCover = 0, storms = 0;
   let particles = [], bolts = [], smokeRate = 0, smokeTimer = 0;
@@ -156,9 +160,9 @@ const Scene = (() => {
   function zoneAt(x, y) {
     const ix = Math.floor(x), iy = Math.floor(y - camY);
     if (ix < 0 || ix >= W || y < 0 || y >= H) return null;
-    if (iy < 0) return 'atmosphere';
+    if (iy < 0) return 'space';
     const i = iy * W + ix;
-    if (pixU[i] < 0) return 'atmosphere';
+    if (pixU[i] < 0) return pixAlt[i] > atmosphere * 1.05 ? 'space' : 'atmosphere';
     const u = ((pixU[i] * TEX_W + spin * TEX_W) | 0) % TEX_W;
     return elev[pixV[i] * TEX_W + u] < currentSea ? 'ocean' : 'ground';
   }
@@ -279,6 +283,7 @@ const Scene = (() => {
     }));
 
     slots = [];
+    volcanoes = [];   // placed again on the next setVolcanoes, for the new size
     for (let x = cx - R * 0.62; x <= cx + R * 0.62; x += 6) slots.push(Math.round(x));
     const order = rng(11);
     for (let i = slots.length - 1; i > 0; i--) {
@@ -583,6 +588,12 @@ const Scene = (() => {
       if (Math.random() < 0.6) particles.push({ x: j.x, y: j.y + 2, vx: 0, vy: 0, life: 1.5, max: 1.5, size: 1, color: '#e8eef8' });
     }
     for (const s of groundSprites) ctx.drawImage(Sprites.canvas(s.id), s.dx, s.dy + camY);
+    for (const v of volcanoes) {
+      v.cool = Math.max(0, v.cool - dt);
+      // Drawn at double size: volcanoes are landmarks to tap.
+      const c = Sprites.canvas(v.cool > 0 ? 'volcanoCold' : 'volcano');
+      ctx.drawImage(c, Math.round(v.x - c.width), Math.round(surfaceY(v.x)) - c.height * 2 + 2 + camY, c.width * 2, c.height * 2);
+    }
   }
 
   function drawComet(dt) {
@@ -811,6 +822,12 @@ const Scene = (() => {
       onMoon(e.clientX, e.clientY);
       return;
     }
+    const vi = volcanoes.findIndex(v => Math.abs(x - v.x) <= 15 && y <= surfaceY(v.x) + camY + 3 && y >= surfaceY(v.x) + camY - 16);
+    if (vi >= 0) {
+      e.preventDefault();
+      if (volcanoes[vi].cool <= 0) onVolcanoFn(vi);
+      return;
+    }
     const hit = visibleClouds().find(v => x >= v.x - 3 && x <= v.x + v.w + 3 && y >= v.y - 6 && y <= v.y + 6);
     if (hit) {
       e.preventDefault();
@@ -836,7 +853,7 @@ const Scene = (() => {
 
   function zoneTap(zone, x, y) {
     const color = { atmosphere: '#a8dcff', ocean: '#3a8ad8', ground: '#c8a070' }[zone];
-    for (let k = 0; k < 8; k++) {
+    for (let k = 0; color && k < 8; k++) {
       const a = k * Math.PI / 4;
       particles.push({ x, y, vx: Math.cos(a) * 18, vy: Math.sin(a) * 18, life: 0.3, max: 0.3, size: 1, color });
     }
@@ -1021,8 +1038,19 @@ const Scene = (() => {
       lastBg = -1e9;
     },
     // A volcano erupts somewhere on the visible planet: lava, then a column of ash.
-    erupt(size = 1) {
-      const x = cx + (Math.random() - 0.5) * R * 0.8, y = groundY(x);
+    // How many volcanoes stand on the planet's edge.
+    setVolcanoes(n) {
+      if (n === volcanoes.length) return;
+      volcanoes = VOLCANO_SPOTS.slice(0, n).map(f => ({ x: Math.round(cx + (f - 0.5) * W * 0.9), cool: 0 }));
+    },
+    onVolcanoTap(fn) {
+      onVolcanoFn = fn;
+    },
+    // A volcano erupts: lava, then a column of ash. Index i picks a volcano; otherwise a ready one, if any.
+    erupt(size = 1, i = -1) {
+      const v = volcanoes[i] || volcanoes.find(o => o.cool <= 0);
+      if (v) v.cool = VOLCANO_COOL_S;
+      const x = v ? v.x : cx + (Math.random() - 0.5) * R * 0.8, y = groundY(x) - (v ? 11 : 0);
       for (let k = 0; k < 25 * size; k++) {
         const a = -Math.PI / 2 + (Math.random() - 0.5) * 0.9, v = 15 + Math.random() * 35 * size;
         particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.8, max: 0.8, size: 1, color: Math.random() < 0.5 ? '#ff5a1a' : '#ffb02e' });

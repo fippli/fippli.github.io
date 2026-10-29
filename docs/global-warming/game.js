@@ -60,7 +60,7 @@ const SECTIONS = {
   world: { name: 'World', unlocked: () => true },
 };
 
-// The icon rail on the left. Each category opens a panel made of sections.
+// Categories group sections into panels. Tapping a part of the scene opens its panel; there is no menu.
 // In the order the story reaches them.
 const CATEGORIES = [
   { id: 'geology', icon: 'mountain', name: 'Geology', sections: ['core', 'land', 'ocean'] },
@@ -511,13 +511,13 @@ function simulate(dt) {
 
 // A volcano erupts: a burst of sulfate aerosols that cools the planet for a while,
 // CO2 that stays and warms it, and ash that darkens the ice.
-function erupt() {
+function erupt(volcano = -1) {
   const size = best('eruptionSize', 1);
   state.eruptions++;
   state.aerosols = Math.min(1, state.aerosols + 0.25 * size);
   state.ash = Math.min(0.4, state.ash + 0.08 * size);
   state.co2 += 150 * size;
-  Scene.erupt(size);
+  Scene.erupt(size, volcano);
 }
 
 /* ================= Tree status and game over ================= */
@@ -592,7 +592,6 @@ function checkSteps() {
   const s = STEPS[state.step];
   buzz([30, 50, 30]);
   recalc();
-  renderRail();
   if (s.tab) openTab(s.tab);
   else renderCategory(true);
 }
@@ -830,13 +829,6 @@ let currentCat = 'geology';
 const visibleSections = cat => CATEGORY_BY_ID[cat].sections.filter(sec => SECTIONS[sec].unlocked());
 
 // Build one panel per category, with a titled block per section.
-// The panel is exactly as tall as the icon rail beside it.
-function sizeSheet() {
-  const rail = $('#rail'), top = rail.firstElementChild?.getBoundingClientRect().top;
-  if (top !== undefined) el.sheet.style.height = `${rail.getBoundingClientRect().bottom - top}px`;
-}
-window.addEventListener('resize', sizeSheet);
-
 function buildPanels() {
   const world = $('#world');
   for (const c of CATEGORIES) {
@@ -851,38 +843,6 @@ function buildPanels() {
     if (c.sections.includes('world')) div.querySelector('[data-section="world"]').appendChild(world);
     $('#panel').appendChild(div);
   }
-  const rail = $('#rail');
-  for (const c of CATEGORIES) {
-    const btn = document.createElement('button');
-    btn.dataset.cat = c.id;
-    btn.title = btn.ariaLabel = c.name;
-    btn.innerHTML = `${spriteImg(c.icon)}<i class="dot"></i>`;
-    btn.addEventListener('click', () => {
-      // Tapping the open category folds the panel away to show more of the planet.
-      if (c.id === currentCat) el.sheet.classList.toggle('collapsed');
-      else openCategory(c.id);
-    });
-    rail.appendChild(btn);
-  }
-}
-
-// Something in this category can be bought right now.
-function hasAffordable(cat) {
-  return visibleSections(cat).some(sec => tabEntries(sec).some(({ kind, item }) => {
-    if (kind === 'researched') return false;
-    if (kind === 'research') return canResearch(item);
-    return !evolved(item.id) && !isExtinct(item.id) && state.dna >= item.cost && parentReady(item);
-  }));
-}
-
-function renderRail() {
-  document.querySelectorAll('#rail button').forEach(btn => {
-    const c = CATEGORY_BY_ID[btn.dataset.cat];
-    const open = btn.dataset.cat === currentCat && !el.sheet.classList.contains('collapsed');
-    btn.classList.toggle('locked', !categoryUnlocked(c));
-    btn.classList.toggle('active', open);
-    btn.classList.toggle('ready', categoryUnlocked(c) && hasAffordable(c.id));
-  });
 }
 
 // The light update skips the world stats and the tree of life, which have their own slower timers.
@@ -903,16 +863,11 @@ function renderCategory(force = false, light = false) {
 
 function openCategory(cat, expand = true) {
   const c = CATEGORY_BY_ID[cat];
-  if (!categoryUnlocked(c)) {
-    const r = document.querySelector(`#rail [data-cat="${cat}"]`).getBoundingClientRect();
-    hint(c.hint, r.right + 120, r.top + r.height / 2);
-    return;
-  }
+  if (!categoryUnlocked(c)) return;
   currentCat = cat;
   document.querySelectorAll('#panel > .tab').forEach(n => n.classList.toggle('active', n.id === `cat-${cat}`));
   if (expand) el.sheet.classList.remove('collapsed');
   renderCategory();
-  renderRail();
 }
 
 // Open the category that holds a section and bring the section into view.
@@ -920,6 +875,16 @@ function openTab(section) {
   openCategory(categoryOf(section).id);
   if (visibleSections(currentCat).length > 1) $(`[data-section="${section}"]`).scrollIntoView({ block: 'start' });
 }
+
+// Tapping a part of the scene opens its panel; tapping it again while open folds the panel away.
+function toggleTab(section) {
+  const open = !el.sheet.classList.contains('collapsed') && categoryOf(section).id === currentCat;
+  if (open) el.sheet.classList.add('collapsed');
+  else openTab(section);
+}
+
+// The big temperature at the top opens the World panel: steps, planet stats and reset.
+$('#hud').addEventListener('click', () => toggleTab('world'));
 
 /* ================= Life tab: the tree of life ================= */
 
@@ -1085,7 +1050,7 @@ Scene.onSunTap((x, y) => {
     return;
   }
   Scene.ray();
-  openTab('sun');
+  toggleTab('sun');
   buzz(6);
 });
 
@@ -1109,9 +1074,15 @@ Scene.onBangTap(() => {
   }
 });
 
+// Tapping a glowing volcano on the planet makes it erupt.
+Scene.onVolcanoTap(i => {
+  erupt(i);
+  buzz([20, 30, 20]);
+});
+
 Scene.onMoonTap(() => {
   if (!state.moonBorn) return;
-  openTab('moon');
+  toggleTab('moon');
   buzz(6);
 });
 
@@ -1124,13 +1095,11 @@ Scene.onSpin(amount => {
     state.spinLocked = true;
     floatText(innerWidth / 2, innerHeight / 2, 'Spin locked!');
     buzz([30, 50, 30]);
-    renderRail();
   }
   if (!state.moonBorn && state.spin >= MOON_SPIN) {
     state.moonBorn = true;
     Scene.flingMoon();
     buzz([40, 60, 40, 60]);
-    renderRail();
   }
 });
 
@@ -1167,6 +1136,11 @@ Scene.onCloudTap((kind, zone, x, y) => {
 // Tapping the planet opens the component under your finger. Before the ocean and land open,
 // the frozen surface and bare rock lead to the Core (volcanoes).
 Scene.onZoneTap((zone, x, y) => {
+  // Empty space folds the panel away.
+  if (zone === 'space') {
+    el.sheet.classList.add('collapsed');
+    return;
+  }
   if (zone !== 'atmosphere' && !state.spinLocked) zone = 'core';
   if (zone === 'ocean') zone = state.step >= 5 ? 'oceanlife' : state.step >= 2 ? 'ocean' : 'land';
   if (zone === 'ground') zone = state.step >= 7 ? 'landlife' : 'land';
@@ -1174,7 +1148,7 @@ Scene.onZoneTap((zone, x, y) => {
     hint(categoryOf(zone).hint, x, y);
     return;
   }
-  openTab(zone);
+  toggleTab(zone);
   buzz(4);
 });
 
@@ -1224,7 +1198,6 @@ function newGame() {
   Object.keys(tabKeys).forEach(k => delete tabKeys[k]);
   $('#gameover').classList.add('hidden');
   recalc();
-  renderRail();
   openTab('core');
 }
 
@@ -1308,6 +1281,7 @@ function updateScene(c) {
   Scene.setSunBackground(componentDone('sun'));
   Scene.setMoon(state.moonBorn, 1, componentDone('moon'));
   Scene.setSpin(state.spin);
+  Scene.setVolcanoes(has('supervolcano') ? 4 : has('volcano') ? 2 : 0);
   Scene.setLand(state.land, state.mountains, state.aerosols);
   const storms = state.step >= 4 ? Math.min(3, 1 + Math.floor((state.clouds - STORM_CLOUDS) * 10)) : 0;
   Scene.setClouds(has('clouds') ? state.clouds : 0, Math.max(0, storms));
@@ -1354,7 +1328,6 @@ function frame(now) {
     checkGameOver();
     updateScene(c);
     renderCategory(false, true);
-    renderRail();
   }
 
   worldTimer += dt;
@@ -1384,10 +1357,8 @@ function frame(now) {
 load();
 Scene.init();
 buildPanels();
-sizeSheet();
 recalc();
 applyOffline();
-renderRail();
 updateScene(tempC());
 openCategory('geology', false);
 if (state.over) showGameOver();

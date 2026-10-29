@@ -257,6 +257,22 @@ const SPRITES = {
     '.c.nnnnnn...',
     'c....nnn....',
   ],
+  volcano: [
+    '.....oro.....',
+    '....kdrdk....',
+    '...kdddddk...',
+    '..kdddgdddk..',
+    '.kddgddddddk.',
+    'kdddddddgdddk',
+  ],
+  volcanoCold: [
+    '.............',
+    '....kdddk....',
+    '...kdddddk...',
+    '..kdddgdddk..',
+    '.kddgddddddk.',
+    'kdddddddgdddk',
+  ],
   mountain: [
     '.....k.....',
     '....kwk....',

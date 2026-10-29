@@ -69,6 +69,8 @@ button {
 /* ---------- HUD ---------- */
 
 #hud {
+  pointer-events: auto;
+  cursor: pointer;
   text-align: center;
   padding: 14px 12px 0;
   text-shadow: 2px 2px 0 #000;
@@ -107,7 +109,7 @@ button {
   pointer-events: auto;
   display: flex;
   flex-direction: column;
-  height: 34dvh;
+  height: min(360px, 46dvh);
   margin: 0 10px 0 8px;
   background: var(--panel);
   border: 2px solid var(--line);
@@ -117,8 +119,6 @@ button {
 
 #sheet.collapsed { display: none; }
 
-/* ---------- Icon rail ---------- */
-
 #main { flex: 1; min-height: 0; display: flex; }
 
 /* The opening movie: only the big number and its caption stay on screen. */
@@ -126,33 +126,6 @@ body.cinema #main, body.cinema .hud-line { visibility: hidden; }
 body.cinema .temp { font-size: clamp(16px, 5.5vw, 26px); }
 #column { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
-#rail {
-  pointer-events: auto;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  gap: 6px;
-  padding: 0 0 calc(8px + env(safe-area-inset-bottom)) 8px;
-}
-
-#rail button {
-  position: relative;
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  background: var(--panel);
-  border: 2px solid var(--line);
-  box-shadow: 2px 2px 0 rgba(0, 0, 0, .6);
-}
-
-#rail .sprite { width: 32px; height: 32px; }
-#rail button.active { background: var(--panel-2); border-color: var(--accent); }
-#rail button.locked .sprite { opacity: .3; filter: grayscale(1); }
-#rail button:active { transform: translate(2px, 2px); box-shadow: none; }
-
-#rail .dot { display: none; position: absolute; top: -4px; right: -4px; width: 8px; height: 8px; background: var(--good); border: 2px solid #000; }
-#rail button.ready .dot { display: block; }
 
 .section + .section { margin-top: 14px; }
 .section-title { margin: 0 0 8px; color: var(--accent); }
