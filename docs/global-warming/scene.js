@@ -62,6 +62,8 @@ const Scene = (() => {
   // Opening movie: 'pre' = the singularity waits for taps, 'warp' = the flight through space after the bang.
   // Day and night: once the planet spins steadily, the sun rises at 6 and sets at 18 o'clock.
   let dayShown = false, dayHour = 12;
+  // Once days run, the view settles on the planet: it stops turning and the sky turns instead.
+  let landed = 0, skyShift = 0, lastHour = null;
   let cinema = null, bangHeat = 0, warpT = 0, warpV = 0, warpFlash = 0, warpStars = [], onBangFn = () => {};
   let onSun = () => {}, onZone = () => {}, onCloud = () => {}, onComet = () => {}, onMoon = () => {}, onSpinFn = () => {};
 
@@ -273,7 +275,7 @@ const Scene = (() => {
     stars = Array.from({ length: Math.round(W * H / 900) }, () => ({
       x: Math.floor(rand() * W),
       y: Math.floor(rand() * H * 0.5),
-      c: pack([255, 255, 255], 0.5 + rand() * 0.5),
+      c: css([255, 255, 255].map(v => v * (0.5 + rand() * 0.5))),
     }));
 
     slots = [];
@@ -335,10 +337,6 @@ const Scene = (() => {
         const band = Math.floor((pixAlt[i] / atmosphere + pixDither[i]) * SKY_BANDS);
         bgPixels[i] = band < SKY_BANDS ? skyColors[Math.max(0, band)] : spaceColor;
       }
-    }
-    for (const s of stars) {
-      const i = s.y * W + s.x;
-      if (pixU[i] < 0 && pixAlt[i] > atmosphere * 1.05) bgPixels[i] = s.c;
     }
     bgCtx.putImageData(bgImage, 0, 0);
   }
@@ -465,6 +463,18 @@ const Scene = (() => {
       moonBody = renderMoonBody(r, moon.wake);
     }
     ctx.drawImage(moonBody, Math.round(moon.cur.x - moonBody.width / 2), Math.round(moon.cur.y - moonBody.height / 2));
+  }
+
+  // Stars in clear, dark sky only: not on the planet or in the lit air. Brighter at night.
+  function drawStars(night) {
+    ctx.globalAlpha = dayShown ? 0.35 + 0.65 * night : 1;
+    for (const st of stars) {
+      const x = Math.floor((st.x + skyShift) % W), i = st.y * W + x;
+      if (pixU[i] >= 0 || pixAlt[i] <= atmosphere * 1.05) continue;
+      ctx.fillStyle = st.c;
+      ctx.fillRect(x, st.y + camY, 1, 1);
+    }
+    ctx.globalAlpha = 1;
   }
 
   // The sun's face for its current mood, brightness and size, rebuilt only when one of them changes.
@@ -721,8 +731,15 @@ const Scene = (() => {
       return;
     }
     // The player's spin turns the planet much faster than its slow idle drift.
-    const turn = 1 / SPIN_SECONDS + spinLevel ** 2 * 0.5;
+    landed = dayShown ? Math.min(1, landed + dt / 3) : 0;
+    const turn = (1 / SPIN_SECONDS + spinLevel ** 2 * 0.5) * (1 - smooth(landed));
     spin = (spin + dt * turn) % 1;
+    // The stars sweep across the sky at the same pace as the sun and moon.
+    if (dayShown && lastHour !== null) {
+      const hours = (dayHour - lastHour + 24) % 24, perHour = (layout.colRight - layout.colLeft) / 12;
+      skyShift = (skyShift + hours * perHour * smooth(landed)) % W;
+    }
+    lastHour = dayShown ? dayHour : null;
     if (now - lastBg > (turn > 0.03 ? 33 : 120)) {
       renderBackground();
       lastBg = now;
@@ -736,6 +753,7 @@ const Scene = (() => {
       ctx.fillStyle = `rgba(2, 4, 16, ${(0.55 * night).toFixed(2)})`;
       ctx.fillRect(0, 0, W, H);
     }
+    drawStars(night);
     // Sun and moon rise and set behind the planet: clip them to the sky.
     ctx.save();
     ctx.beginPath();
