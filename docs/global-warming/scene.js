@@ -6,6 +6,7 @@ const Scene = (() => {
   const TEX_W = 256;
   const TEX_H = 128;
   const TILT = 50 * Math.PI / 180;          // pole tipped away from the viewer, so the horizon is temperate
+  const TILT_RANGE = [10 * Math.PI / 180, 85 * Math.PI / 180];   // how far the player can tip the view
   const LIGHT = norm([0.4, 0.85, 0.4]);     // the sun is above and to the right of the planet
   const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => v / 16 - 0.5);
   const SKY_BANDS = 8;
@@ -66,6 +67,7 @@ const Scene = (() => {
   // Opening movie: 'pre' = the singularity waits for taps, 'warp' = the flight through space after the bang.
   // Day and night: once the planet spins steadily, the sun rises at 6 and sets at 18 o'clock.
   let dayShown = false, dayHour = 12;
+  let viewTilt = TILT, tiltDirty = false;   // the player can tip the planet to look at it from other angles
   // Once days run, the view settles on the planet: it stops turning and the sky turns instead.
   let landed = 0, skyShift = 0, lastHour = null;
   let cinema = null, bangHeat = 0, warpT = 0, warpV = 0, warpFlash = 0, warpStars = [], onBangFn = () => {};
@@ -254,26 +256,7 @@ const Scene = (() => {
     pixShade = new Uint8Array(n);
     pixAlt = new Float32Array(n);
     pixDither = new Float32Array(n);
-    const cosT = Math.cos(TILT), sinT = Math.sin(TILT);
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const i = y * W + x, dx = x + 0.5 - cx, dy = y + 0.5 - cy, d = Math.hypot(dx, dy);
-        const dither = BAYER[(y & 3) * 4 + (x & 3)];
-        if (d <= R) {
-          const nx = dx / R, ny = -dy / R, nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
-          const wy = ny * cosT - nz * sinT, wz = ny * sinT + nz * cosT;
-          const lat = Math.asin(Math.max(-1, Math.min(1, wy)));
-          pixU[i] = Math.atan2(nx, wz) / (2 * Math.PI) + 0.5;
-          pixV[i] = Math.min(TEX_H - 1, Math.max(0, Math.floor((0.5 - lat / Math.PI) * TEX_H)));
-          const b = nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2] + dither * 0.12;
-          pixShade[i] = b > 0.55 ? 0 : b > 0.2 ? 1 : 2;
-        } else {
-          pixU[i] = -1;
-          pixAlt[i] = d - R;
-          pixDither[i] = dither * 0.18;
-        }
-      }
-    }
+    mapPlanet();
 
     const rand = rng(3);
     stars = Array.from({ length: Math.round(W * H / 900) }, () => ({
@@ -300,6 +283,31 @@ const Scene = (() => {
       layoutSprites();
     }
     lastBg = -1e9;
+  }
+
+  // Which texture point each screen pixel of the planet shows, for the current view tilt, and the sky's
+  // height above the planet for every other pixel.
+  function mapPlanet() {
+    const cosT = Math.cos(viewTilt), sinT = Math.sin(viewTilt);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x, dx = x + 0.5 - cx, dy = y + 0.5 - cy, d = Math.hypot(dx, dy);
+        const dither = BAYER[(y & 3) * 4 + (x & 3)];
+        if (d <= R) {
+          const nx = dx / R, ny = -dy / R, nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+          const wy = ny * cosT - nz * sinT, wz = ny * sinT + nz * cosT;
+          const lat = Math.asin(Math.max(-1, Math.min(1, wy)));
+          pixU[i] = Math.atan2(nx, wz) / (2 * Math.PI) + 0.5;
+          pixV[i] = Math.min(TEX_H - 1, Math.max(0, Math.floor((0.5 - lat / Math.PI) * TEX_H)));
+          const b = nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2] + dither * 0.12;
+          pixShade[i] = b > 0.55 ? 0 : b > 0.2 ? 1 : 2;
+        } else {
+          pixU[i] = -1;
+          pixAlt[i] = d - R;
+          pixDither[i] = dither * 0.18;
+        }
+      }
+    }
   }
 
   function layoutSprites() {
@@ -745,6 +753,10 @@ const Scene = (() => {
     landed = dayShown ? Math.min(1, landed + dt / 3) : 0;
     const turn = (1 / SPIN_SECONDS + spinLevel ** 2 * 0.5) * (1 - smooth(landed));
     spin = (spin + dt * turn) % 1;
+    if (tiltDirty) {
+      tiltDirty = false;
+      mapPlanet();
+    }
     // The stars sweep across the sky at the same pace as the sun and moon.
     if (dayShown && lastHour !== null) {
       const hours = (dayHour - lastHour + 24) % 24, perHour = (layout.colRight - layout.colLeft) / 12;
@@ -844,7 +856,7 @@ const Scene = (() => {
     if (!zone) return;
     // On the planet a press is a tap (opens that zone) or a swipe (spins the planet); release decides.
     if (zone !== 'atmosphere') {
-      drag = { x: e.clientX, moved: 0, zone, px: x, py: y };
+      drag = { x: e.clientX, y: e.clientY, moved: 0, zone, px: x, py: y };
       canvas.setPointerCapture?.(e.pointerId);
       return;
     }
@@ -862,10 +874,19 @@ const Scene = (() => {
 
   canvas.addEventListener('pointermove', e => {
     if (!drag) return;
-    const dx = e.clientX - drag.x;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     drag.x = e.clientX;
-    drag.moved += Math.abs(dx);
+    drag.y = e.clientY;
+    drag.moved += Math.abs(dx) + Math.abs(dy);
     if (drag.moved <= 8) return;
+    if (dayShown) {
+      // Once the planet holds still, dragging turns it to look at it from other sides and angles.
+      spin = (spin - dx / window.innerWidth * 0.5 + 1) % 1;
+      viewTilt = Math.max(TILT_RANGE[0], Math.min(TILT_RANGE[1], viewTilt - dy / window.innerHeight * 2));
+      tiltDirty = true;
+      lastBg = -1e9;
+      return;
+    }
     onSpinFn(Math.abs(dx) / window.innerWidth);
     if (Math.random() < 0.5) {
       particles.push({ x: e.clientX / P, y: e.clientY / P, vx: Math.sign(dx) * 40, vy: 0, life: 0.3, max: 0.3, size: 1, color: '#e8eef8' });
