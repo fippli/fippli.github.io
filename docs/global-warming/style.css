@@ -443,3 +443,10 @@ h3 { margin: 12px 4px 8px; font-family: var(--pixel-font); font-size: 10px; font
 
 @keyframes toast-in { from { transform: translateY(-20px); opacity: 0; } }
 @keyframes toast-out { to { transform: translateY(-20px); opacity: 0; } }
+
+/* A thawed gas: lit up, with a gauge of its level in the air. */
+.item.gas { opacity: 1; border-color: var(--accent); box-shadow: 0 0 8px rgba(255, 180, 58, .35); }
+.item.gas .icon { border-color: var(--accent); }
+.item.gas .meta .meter { margin: 4px 0 2px; }
+.item.gas .meta span { color: var(--text); }
+.item.gas .cost { color: var(--accent); }

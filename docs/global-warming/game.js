@@ -278,6 +278,9 @@ const openOcean = () => OCEAN_SHARE * (1 - iceCover());
 const ozone = () => clamp01(state.o2 / 2);   // ozone forms as O2 approaches 2%
 const volcanoes = () => count('volcano') * state.volcanoActivity;
 
+// Warming (K) from one greenhouse gas in thin air. The air pressure and water vapor amplify it in climate().
+const gasWarming = gas => (gas === 'co2' ? 3.3 * log2(1 + state.co2 / 10) : 2 * log2(1 + state.ch4 / 0.5));
+
 // Target temperature (K) from a simple energy balance:
 // sunlight absorbed (less what ice, clouds and dust reflect) plus the greenhouse effect of the air.
 function climate() {
@@ -288,7 +291,7 @@ function climate() {
   const sunK = 255 * Math.pow(Math.max(0, sunBrightness() * (1 - albedo) / 0.7), 0.25);
   const bare = Math.pow(sunK ** 4 + CORE_K ** 4, 0.25);
   // Greenhouse: each doubling of CO2 adds a few degrees; thin air holds less heat; water vapor amplifies it.
-  const gasK = 3.3 * log2(1 + state.co2 / 10) + 2 * log2(1 + state.ch4 / 0.5);
+  const gasK = gasWarming('co2') + gasWarming('ch4');
   const greenhouse = gasK * (0.3 + 0.7 * state.pressure) * (1 + 0.45 * (1 - ice));
   return { target: bare + greenhouse, albedo, dust, greenhouse, sunK: bare };
 }
@@ -521,8 +524,16 @@ const spriteImg = id => `<img class="sprite" src="${Sprites.icon(id)}" alt="">`;
 // Each tab is rebuilt only when its list of visible entries changes; otherwise only text updates.
 const tabKeys = {};
 
+// A thawed gas stays in its list, lit up, with a gauge of how much of it is in the air.
+const GAS_GAUGES = {
+  thawN2: { label: 'N₂', level: () => state.pressure, text: () => `${state.pressure.toFixed(2)} bar · greenhouse x${(0.3 + 0.7 * state.pressure).toFixed(2)}` },
+  thawCH4: { label: 'CH₄', level: () => Math.log10(1 + state.ch4) / Math.log10(31), text: () => `${state.ch4.toFixed(1)} ppm · +${gasWarming('ch4').toFixed(0)}°C` },
+  thawCO2: { label: 'CO₂', level: () => Math.log10(1 + state.co2) / 5, text: () => `${fmt(state.co2)} ppm · +${gasWarming('co2').toFixed(0)}°C` },
+};
+
 function tabEntries(tab) {
   const entries = [];
+  for (const u of UPGRADES) if (u.tab === tab && u.thaw && has(u.id)) entries.push({ kind: 'gas', item: u });
   for (const b of BUILDINGS) if (b.tab === tab && state.step >= b.step) entries.push({ kind: 'building', item: b });
   for (const u of UPGRADES) if (u.tab === tab && state.step >= u.step && !has(u.id)) entries.push({ kind: 'upgrade', item: u });
   for (const s of SPECIES) {
@@ -566,7 +577,7 @@ function renderTab(tab, force = false) {
   const root = $(`#${tab}`);
   if (!root || tab === 'world' || tab === 'life') return;
   const entries = tabEntries(tab);
-  const key = `${state.step}|${count('volcano') > 0}|${moonAwake()}|${entries.map(e => e.item.id + pop(e.item.id)).join()}`.replace(/0\.\d+/g, 'a');
+  const key = `${state.step}|${count('volcano') > 0}|${moonAwake()}|${entries.map(e => e.kind + e.item.id + pop(e.item.id)).join()}`.replace(/0\.\d+/g, 'a');
   if (force || tabKeys[tab] !== key) {
     tabKeys[tab] = key;
     root.innerHTML = `<div class="domain-head">${headHtml(tab)}</div><ul class="list"></ul>`;
@@ -578,7 +589,10 @@ function renderTab(tab, force = false) {
         <div class="icon">${spriteImg(e.item.icon)}</div>
         <div class="info"><div class="name"></div><div class="desc"></div><div class="meta"></div></div>
         <div class="side"><div class="count"></div><div class="cost"></div></div>`;
-      li.addEventListener('click', () => buy(e));
+      if (e.kind === 'gas') {
+        li.classList.add('gas');
+        li.querySelector('.meta').innerHTML = '<div class="meter"><i></i></div><span></span>';
+      } else li.addEventListener('click', () => buy(e));
       e.li = li;
       list.appendChild(li);
     }
@@ -633,7 +647,8 @@ function updateTab(tab, root) {
     const frozen = [state.ch4Ice > 0 && 'methane', state.co2Ice > 0 && 'CO₂', !has('thawN2') && 'nitrogen'].filter(Boolean);
     setMeter(root, 'm-clouds', state.clouds / STORM_CLOUDS, pct(state.clouds));
     setMeter(root, 'm-ozone', ozone() / OZONE_FOR_LAND, `${pct(ozone())} (O₂ ${state.o2.toFixed(2)}%)`);
-    note('m-air', `Air ${state.pressure.toFixed(2)} bar · CO₂ ${fmt(state.co2)} ppm · methane ${state.ch4.toFixed(1)} ppm · greenhouse +${rates.climate.greenhouse.toFixed(0)}°C${frozen.length ? ` · still frozen: ${frozen.join(', ')}` : ''}`);
+    const levels = [!has('thawCO2') && `CO₂ ${fmt(state.co2)} ppm`, !has('thawCH4') && `methane ${state.ch4.toFixed(1)} ppm`].filter(Boolean);
+    note('m-air', `Air ${state.pressure.toFixed(2)} bar · ${levels.map(l => l + ' · ').join('')}greenhouse +${rates.climate.greenhouse.toFixed(0)}°C${frozen.length ? ` · still frozen: ${frozen.join(', ')}` : ''}`);
   }
   if (tab === 'core') {
     note('m-core', `Volcanoes add ${fmt(rates.co2)} ppm CO₂/s.${state.step >= 3 && !has('magnet') ? ' No magnetic field: the solar wind is stripping the air.' : ''}`);
@@ -648,7 +663,14 @@ function updateTab(tab, root) {
   }
   for (const e of root._entries || []) {
     const { item, li } = e, q = s => li.querySelector(s);
-    if (e.kind === 'building') {
+    if (e.kind === 'gas') {
+      const g = GAS_GAUGES[item.id];
+      li.className = 'item gas';
+      q('.name').textContent = `${g.label} in the air`;
+      q('.meta i').style.width = pct(clamp01(g.level()));
+      q('.meta span').textContent = g.text();
+      q('.cost').textContent = 'Thawed';
+    } else if (e.kind === 'building') {
       const n = buyAmount === 'max' ? Math.max(1, maxAffordable(item)) : buyAmount;
       const cost = bulkCost(item, n);
       li.className = 'item' + (state.energy >= cost ? ' affordable' : '');
