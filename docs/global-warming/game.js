@@ -143,11 +143,16 @@ const RESEARCH = [
   { id: 'soil', icon: 'plant', tab: 'landlife', step: 7, needs: [['plants', 1]], name: 'Soil', dnaMult: { ground: 2 }, gauge: dnaGauge('ground') },
 ];
 const RESEARCH_BY_ID = Object.fromEntries(RESEARCH.map(r => [r.id, r]));
-// The opening: tap the singularity until it bangs, then a short flight through 9.2 billion years of space
+// The opening: tap the singularity until it bangs, then fly through 9.2 billion years of space
 // (the sun formed about 9.2 billion years after the Big Bang, 4.6 billion years ago).
+// The flight starts slow; every tap speeds it up for good.
 const BANG_TAPS = 40;
 const BANG_DECAY = 0.1;
-const MOVIE_S = 9;
+const WARP_START = 0.3;        // flight speed after the bang
+const WARP_TAP = 0.25;         // speed added by each tap
+const WARP_MAX = 4.3;          // light speed
+const WARP_RATE = 0.1 / WARP_MAX;   // progress per second per unit of speed: about 8 s at light speed
+const ARRIVAL_S = 2;           // the last stretch, braking at the sun, takes the same time at any speed
 const SUN_BIRTH_YEARS = 9.2e9;
 const IGNITION_TAPS = 80;
 const IGNITION_GRACE_S = 0.6;   // a pause this long between taps lets the core start cooling
@@ -228,10 +233,11 @@ let state = freshState();
 let owned = new Set();   // purchased upgrade ids
 let rates = { dnaBy: {} };          // per-second rates and climate parts, recalculated often
 let skipSave = false;
-let movieT = null;       // seconds into the opening flight, or null when it is not playing
+let movieP = null;       // progress of the opening flight (0..1), or null when it is not playing
+let warpSpeed = WARP_START;
 
 // The opening movie runs until the flight after the Big Bang ends; the planet waits.
-const inCinema = () => !state.banged || movieT !== null;
+const inCinema = () => !state.banged || movieP !== null;
 
 function load() {
   // Open the game with ?reset to start over with a fresh save.
@@ -1022,15 +1028,21 @@ Scene.onSunTap((x, y) => {
   buzz(6);
 });
 
-// Each tap squeezes the singularity hotter. At full heat it bangs and the flight through space begins.
+// Each tap squeezes the singularity hotter. At full heat it bangs and the flight through space begins;
+// from then on each tap speeds up the flight.
 Scene.onBangTap(() => {
-  if (state.banged) return;
+  if (state.banged) {
+    warpSpeed = Math.min(WARP_MAX, warpSpeed + WARP_TAP);
+    buzz(4);
+    return;
+  }
   state.sinceTap = 0;
   state.bang = Math.min(1, state.bang + 1 / BANG_TAPS);
   buzz(6);
   if (state.bang >= 1) {
     state.banged = true;
-    movieT = 0;
+    movieP = 0;
+    warpSpeed = WARP_START;
     buzz([60, 40, 120]);
     save();
   }
@@ -1193,7 +1205,7 @@ window.addEventListener('storage', e => {
 /* ================= Main loop ================= */
 
 // Years since the Big Bang during the flight: slow at first, then racing, reaching the sun's birth on arrival.
-const movieYears = () => SUN_BIRTH_YEARS * clamp01(movieT / (MOVIE_S * 0.85)) ** 3;
+const movieYears = () => SUN_BIRTH_YEARS * clamp01(movieP / 0.8) ** 3;
 
 function fmtYears(y) {
   if (y < 1e3) return `${Math.floor(y)} years`;
@@ -1246,12 +1258,12 @@ function frame(now) {
     // The singularity cools back down when the player stops tapping, like the sun before ignition.
     state.sinceTap = (state.sinceTap || 0) + dt;
     if (state.sinceTap > IGNITION_GRACE_S) state.bang = Math.max(0, state.bang - BANG_DECAY * dt);
-  } else if (movieT !== null) {
-    movieT += dt;
-    if (movieT >= MOVIE_S) movieT = null;
+  } else if (movieP !== null) {
+    movieP += movieP < 0.8 ? warpSpeed * WARP_RATE * dt : 0.2 * dt / ARRIVAL_S;
+    if (movieP >= 1) movieP = null;
   } else if (!state.over) simulate(dt);
   state.lastTick = Date.now();
-  Scene.setCinema(!state.banged ? 'pre' : movieT !== null ? 'warp' : null, !state.banged ? state.bang : movieT / MOVIE_S);
+  Scene.setCinema(!state.banged ? 'pre' : movieP !== null ? 'warp' : null, !state.banged ? state.bang : movieP, warpSpeed);
   document.body.classList.toggle('cinema', inCinema());
 
   const c = tempC();

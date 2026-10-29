@@ -60,7 +60,7 @@ const Scene = (() => {
   let particles = [], bolts = [], smokeRate = 0, smokeTimer = 0;
   let sunPress = 0, comet = null, spinLevel = 0, drag = null;
   // Opening movie: 'pre' = the singularity waits for taps, 'warp' = the flight through space after the bang.
-  let cinema = null, bangHeat = 0, warpT = 0, warpStars = [], onBangFn = () => {};
+  let cinema = null, bangHeat = 0, warpT = 0, warpV = 0, warpFlash = 0, warpStars = [], onBangFn = () => {};
   let onSun = () => {}, onZone = () => {}, onCloud = () => {}, onComet = () => {}, onMoon = () => {}, onSpinFn = () => {};
 
   /* ---------- helpers ---------- */
@@ -343,7 +343,7 @@ const Scene = (() => {
 
   function renderSunBody(mood, bright) {
     const dim = 1 - clamp01(bright / 0.7);
-    const r = sun.r, size = r * 2 + 7, c = document.createElement('canvas');
+    const r = sun.r, size = Math.ceil(r * 2.3) + 4, c = document.createElement('canvas');
     c.width = c.height = size;
     const g = c.getContext('2d'), m = size / 2;
     for (let y = 0; y < size; y++) {
@@ -650,18 +650,12 @@ const Scene = (() => {
     };
   }
 
-  // Flight speed through the young universe: a jump to light speed, a long cruise, then braking at the sun.
-  function warpSpeed(p) {
-    if (p < 0.12) return 0.3 + 4 * p / 0.12;
-    if (p < 0.7) return 4.3;
-    if (p < 0.88) return 0.05 + 4.25 * (1 - (p - 0.7) / 0.18);
-    return 0.05;
-  }
-
   function drawWarp(dt) {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
-    const v = warpSpeed(warpT), f = Math.min(W, H) * 0.5, ox = W / 2, oy = H / 2;
+    // The flight brakes on arrival, when the sun comes up ahead.
+    const v = warpT > 0.8 ? Math.max(0.05, warpV * (1 - (warpT - 0.8) / 0.1)) : warpV;
+    const f = Math.min(W, H) * 0.5, ox = W / 2, oy = H / 2;
     for (const st of warpStars) {
       st.z -= v * dt * 0.25;
       if (st.z <= 0.02) {
@@ -678,8 +672,9 @@ const Scene = (() => {
       }
     }
     // The bang's flash fades out.
-    if (warpT < 0.06) {
-      ctx.globalAlpha = 1 - warpT / 0.06;
+    warpFlash = Math.max(0, warpFlash - dt * 2);
+    if (warpFlash > 0) {
+      ctx.globalAlpha = warpFlash;
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, W, H);
       ctx.globalAlpha = 1;
@@ -726,10 +721,10 @@ const Scene = (() => {
 
   canvas.addEventListener('pointerdown', e => {
     const x = e.clientX / P, y = e.clientY / P;
-    // During the opening movie the whole screen is the singularity.
+    // During the opening movie the whole screen is the singularity, and then the throttle.
     if (cinema) {
       e.preventDefault();
-      if (cinema === 'pre') onBangFn(e.clientX, e.clientY);
+      onBangFn(e.clientX, e.clientY);
       return;
     }
     if (comet && Math.hypot(x - comet.x, y - comet.y) < 10) {
@@ -921,9 +916,11 @@ const Scene = (() => {
     onMoonTap(fn) {
       onMoon = fn;
     },
-    // Opening movie: 'pre' with the singularity's heat (0..1), 'warp' with the flight's progress (0..1), or null.
-    setCinema(mode, value) {
+    // Opening movie: 'pre' with the singularity's heat (0..1), 'warp' with the flight's progress (0..1)
+    // and speed, or null.
+    setCinema(mode, value, speed = 0) {
       if (mode === 'warp' && cinema !== 'warp') {
+        warpFlash = 1;
         warpStars = Array.from({ length: 220 }, () => newStar(0.1 + Math.random() * 0.9));
         for (let k = 0; k < 80; k++) {
           const a = Math.random() * Math.PI * 2, sp = 30 + Math.random() * 120;
@@ -932,7 +929,10 @@ const Scene = (() => {
       }
       cinema = mode;
       if (mode === 'pre') bangHeat = value;
-      else if (mode === 'warp') warpT = value;
+      else if (mode === 'warp') {
+        warpT = value;
+        warpV = speed;
+      }
     },
     onBangTap(fn) {
       onBangFn = fn;
