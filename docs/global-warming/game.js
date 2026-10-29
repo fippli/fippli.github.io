@@ -15,6 +15,7 @@ const STORM_CLOUDS = 0.35;         // cloud cover where storms start
 const OZONE_FOR_LAND = 0.6;
 const MAX_O2 = 21;
 const LIFE_WINDOW = [11, 36];      // global mean °C range of complex life over the last 485 million years
+const SUN_GYR_S = 120;             // real seconds per billion years of the sun's life
 const SUN_IGNITED = 0.7;           // the young sun shone at about 70% of today's brightness
 // Spinning the planet (swipe it): fast enough and the core becomes a dynamo, faster still and it throws off the moon.
 const SPIN_PER_SCREEN = 0.12;      // spin added by a swipe across the whole screen width
@@ -85,54 +86,68 @@ const ASH_LIFE_S = 120;
 // Gauges: [level 0..1, text]. A researched node shows its gauge instead of a description, so the player
 // learns what it does by watching it move as the rest of the planet changes.
 const logLevel = (v, max) => clamp01(Math.log10(1 + Math.max(0, v)) / Math.log10(1 + max));
-const fusionGauge = () => [logLevel(fusionRate(), 100), `${fmt(fusionRate())} E/s`];
-const sunGauge = () => [sunBrightness(), `${pct(sunBrightness())} of today`];
+const sunGauge = () => [sunBrightness(), `${pct(sunBrightness())} of today · ${state.sunAge.toFixed(1)} Gyr old`];
 const volcanoGauge = () => [clamp01(rates.co2 / 200), `+${fmt(rates.co2)} ppm CO₂/s · ${pct(state.land)} land`];
 const soupGauge = () => [clamp01(soupMult() / 12), `x${soupMult().toFixed(1)} soup per strike`];
 const rainGauge = () => [logLevel(state.minerals, 1e4), `${fmt(state.minerals)} minerals · +${fmt(mult('rainMult'))} per drop`];
 const dnaGauge = domain => () => [logLevel(rates.dnaBy[domain], 1000), `${fmt(rates.dnaBy[domain])} DNA/s`];
 
-// The research tree, bought with Energy. Each node shows only its name until researched, then a gauge.
-// A node appears once everything in `requires` is researched, the step is reached and, for frozen gases,
-// the planet is warm enough (`minK`). `replaces` hides the earlier node of a chain once researched.
+// What a research node needs before the player can choose to research it: real physical conditions,
+// not a currency. Each kind reads the planet now and shows the target.
+const NEEDS = {
+  temp: { label: v => `${v}°C`, now: () => tempC(), show: v => fmtTemp(v) },
+  sunAge: { label: v => `sun ${v} Gyr old`, now: () => state.sunAge, show: v => `${v.toFixed(1)} Gyr` },
+  day: { label: v => `${v} h day`, now: () => dayHours(state.spin), show: v => `${v.toFixed(1)} h` },
+  air: { label: v => `${v} bar air`, now: () => state.pressure, show: v => `${v.toFixed(2)} bar` },
+  water: { label: v => `${v}% open water`, now: () => openOcean() * 100, show: v => `${v.toFixed(0)}%` },
+  clouds: { label: v => `${v}% clouds`, now: () => state.clouds * 100, show: v => `${v.toFixed(0)}%` },
+  strikes: { label: v => `${v} lightning strikes`, now: () => state.strikes, show: v => `${v}` },
+  eruptions: { label: v => `${v} eruptions`, now: () => state.eruptions, show: v => `${v}` },
+  land: { label: v => `${v}% land`, now: () => state.land * 100, show: v => `${v.toFixed(0)}%` },
+  minerals: { label: v => `${v} minerals`, now: () => state.minerals, show: v => fmt(v) },
+  species: { label: v => `${v} species alive`, now: () => SPECIES.filter(sp => evolved(sp.id)).length, show: v => `${v}` },
+  plants: { label: v => `${v} land plants`, now: () => SPECIES.filter(sp => sp.green && evolved(sp.id)).length, show: v => `${v}` },
+};
+const needMet = ([kind, v]) => NEEDS[kind].now() >= v;
+
+// The research tree. Each node shows only its name and what it needs until researched, then a gauge.
+// A node appears once everything in `requires` is researched and the step is reached. It can be researched
+// once every condition in `needs` holds; the player chooses when. `replaces` hides the earlier node of a chain.
 const RESEARCH = [
-  // Sun
-  { id: 'stable', icon: 'sunicon', tab: 'sun', step: 1, name: 'Fusion', cost: 40, fusion: 10, gauge: fusionGauge },
-  { id: 'pp', icon: 'sunicon', tab: 'sun', step: 1, requires: ['stable'], replaces: 'stable', name: 'Proton-proton Chain', cost: 400, fusion: 30, gauge: fusionGauge },
-  { id: 'cno', icon: 'sunicon', tab: 'sun', step: 2, requires: ['pp'], replaces: 'pp', name: 'CNO Cycle', cost: 5000, fusion: 100, gauge: fusionGauge },
-  { id: 'sun1', icon: 'sunicon', tab: 'sun', step: 1, name: 'Sunlight', cost: 300, sun: 0.78, gauge: sunGauge },
-  { id: 'sun2', icon: 'sunicon', tab: 'sun', step: 1, requires: ['sun1'], replaces: 'sun1', name: 'Brighter Sun', cost: 3000, sun: 0.86, gauge: sunGauge },
-  { id: 'sun3', icon: 'sunicon', tab: 'sun', step: 2, requires: ['sun2'], replaces: 'sun2', name: 'Main Sequence', cost: 20000, sun: 0.93, gauge: sunGauge },
-  { id: 'sun4', icon: 'sunicon', tab: 'sun', step: 5, requires: ['sun3'], replaces: 'sun3', name: 'Mature Sun', cost: 100000, sun: 1, gauge: sunGauge },
-  { id: 'uv', icon: 'sunicon', tab: 'sun', step: 5, name: 'Ultraviolet', cost: 8000, dnaMult: { all: 1.25 }, gauge: () => [logLevel(rates.dna, 1000), `${fmt(rates.dna)} DNA/s`] },
-  // Atmosphere
-  { id: 'thawN2', icon: 'cloud', tab: 'atmosphere', step: 0, minK: 63, name: 'Nitrogen', cost: 5, thaw: 'n2', gauge: () => [state.pressure, `${state.pressure.toFixed(2)} bar`] },
-  { id: 'thawCH4', icon: 'cloud', tab: 'atmosphere', step: 0, minK: 112, name: 'Methane', cost: 15, thaw: 'ch4', gauge: () => [logLevel(state.ch4, 30), `${state.ch4.toFixed(1)} ppm · +${gasWarming('ch4').toFixed(0)}°C`] },
-  { id: 'thawCO2', icon: 'cloud', tab: 'atmosphere', step: 0, minK: 195, name: 'Carbon Dioxide', cost: 40, thaw: 'co2', gauge: () => [logLevel(state.co2, 1e5), `${fmt(state.co2)} ppm · +${gasWarming('co2').toFixed(0)}°C`] },
-  { id: 'clouds', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['thawN2'], name: 'Clouds', cost: 1000, gauge: () => [state.clouds, `${pct(state.clouds)} cover`] },
-  { id: 'evap', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['clouds'], name: 'Evaporation', cost: 3000, cloudMult: 1.5, gauge: () => [clamp01(rates.clouds / 0.05), `+${(rates.clouds * 100).toFixed(1)}% cover/s`] },
-  { id: 'rain', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['clouds'], name: 'Rain', cost: 800, gauge: rainGauge },
-  { id: 'downpour', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['rain'], replaces: 'rain', name: 'Downpour', cost: 1500, rainMult: 3, gauge: rainGauge },
-  { id: 'lightning', icon: 'bolt', tab: 'atmosphere', step: 2, requires: ['clouds'], name: 'Lightning', cost: 2000,
+  // Sun: it brightens as it ages, as the real sun did (70% of today's light at birth).
+  { id: 'sun1', icon: 'sunicon', tab: 'sun', step: 1, needs: [['sunAge', 0.5]], name: 'Sunlight', sun: 0.78, gauge: sunGauge },
+  { id: 'sun2', icon: 'sunicon', tab: 'sun', step: 1, requires: ['sun1'], replaces: 'sun1', needs: [['sunAge', 1.5]], name: 'Brighter Sun', sun: 0.86, gauge: sunGauge },
+  { id: 'sun3', icon: 'sunicon', tab: 'sun', step: 1, requires: ['sun2'], replaces: 'sun2', needs: [['sunAge', 3]], name: 'Main Sequence', sun: 0.93, gauge: sunGauge },
+  { id: 'sun4', icon: 'sunicon', tab: 'sun', step: 1, requires: ['sun3'], replaces: 'sun3', needs: [['sunAge', 4.5]], name: 'Mature Sun', sun: 1, gauge: sunGauge },
+  { id: 'uv', icon: 'sunicon', tab: 'sun', step: 5, needs: [['species', 3]], name: 'Ultraviolet', dnaMult: { all: 1.25 }, gauge: () => [logLevel(rates.dna, 1000), `${fmt(rates.dna)} DNA/s`] },
+  // Atmosphere: each frozen gas can thaw at its real melting or boiling point.
+  { id: 'thawN2', icon: 'cloud', tab: 'atmosphere', step: 0, needs: [['temp', -210]], name: 'Nitrogen', thaw: 'n2', gauge: () => [state.pressure, `${state.pressure.toFixed(2)} bar`] },
+  { id: 'thawCH4', icon: 'cloud', tab: 'atmosphere', step: 0, needs: [['temp', -161]], name: 'Methane', thaw: 'ch4', gauge: () => [logLevel(state.ch4, 30), `${state.ch4.toFixed(1)} ppm · +${gasWarming('ch4').toFixed(0)}°C`] },
+  { id: 'thawCO2', icon: 'cloud', tab: 'atmosphere', step: 0, needs: [['temp', -78]], name: 'Carbon Dioxide', thaw: 'co2', gauge: () => [logLevel(state.co2, 1e5), `${fmt(state.co2)} ppm · +${gasWarming('co2').toFixed(0)}°C`] },
+  { id: 'clouds', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['thawN2'], needs: [['water', 10], ['air', 0.5]], name: 'Clouds', gauge: () => [state.clouds, `${pct(state.clouds)} cover`] },
+  { id: 'evap', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['clouds'], needs: [['temp', 10]], name: 'Evaporation', cloudMult: 1.5, gauge: () => [clamp01(rates.clouds / 0.05), `+${(rates.clouds * 100).toFixed(1)}% cover/s`] },
+  { id: 'rain', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['clouds'], needs: [['clouds', 10]], name: 'Rain', gauge: rainGauge },
+  { id: 'downpour', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['rain'], replaces: 'rain', needs: [['clouds', 25]], name: 'Downpour', rainMult: 3, gauge: rainGauge },
+  { id: 'lightning', icon: 'bolt', tab: 'atmosphere', step: 2, requires: ['clouds'], needs: [['clouds', 20]], name: 'Lightning',
     gauge: () => (state.step >= 5 ? [logLevel(state.strikes, 1000), `${fmt(state.strikes)} strikes`] : [state.soup / SOUP_FULL, `Soup ${pct(state.soup / SOUP_FULL)}`]) },
-  { id: 'storms', icon: 'bolt', tab: 'atmosphere', step: 4, requires: ['lightning'], name: 'Thunderstorms', cost: 2500, lightning: 0.4, gauge: () => [clamp01(rates.lightning / 0.4), `${(rates.lightning * 60).toFixed(0)} strikes/min`] },
-  { id: 'bigbolt', icon: 'bolt', tab: 'atmosphere', step: 4, requires: ['lightning'], name: 'Bigger Bolts', cost: 4000, boltMult: 2, gauge: soupGauge },
-  // Land: the crust. Volcanoes build land, plates move it, collisions pile it up into mountains.
-  { id: 'volcano', icon: 'vent', tab: 'land', step: 1, name: 'Volcanoes', cost: 60, volcanoes: 5, gauge: volcanoGauge },
-  { id: 'supervolcano', icon: 'vent', tab: 'land', step: 1, requires: ['volcano'], replaces: 'volcano', name: 'Supervolcanoes', cost: 1500, volcanoes: 15, eruptionSize: 2.5, gauge: volcanoGauge },
-  { id: 'plates', icon: 'mountain', tab: 'land', step: 1, requires: ['volcano'], name: 'Plate Tectonics', cost: 1500, weatherMult: 1.5, gauge: () => [logLevel(rates.weathering, 100), `−${fmt(rates.weathering)} ppm CO₂/s`] },
-  { id: 'collision', icon: 'mountain', tab: 'land', step: 2, requires: ['plates'], name: 'Collision', cost: 6000, gauge: () => [state.mountains, `${pct(state.mountains)} mountains`] },
+  { id: 'storms', icon: 'bolt', tab: 'atmosphere', step: 4, requires: ['lightning'], needs: [['strikes', 10]], name: 'Thunderstorms', lightning: 0.4, gauge: () => [clamp01(rates.lightning / 0.4), `${(rates.lightning * 60).toFixed(0)} strikes/min`] },
+  { id: 'bigbolt', icon: 'bolt', tab: 'atmosphere', step: 4, requires: ['lightning'], needs: [['strikes', 25]], name: 'Bigger Bolts', boltMult: 2, gauge: soupGauge },
+  // Land: the crust. Volcanoes build land, plates move it (water helps them slide), collisions pile up mountains.
+  { id: 'volcano', icon: 'vent', tab: 'land', step: 1, name: 'Volcanoes', volcanoes: 5, gauge: volcanoGauge },
+  { id: 'supervolcano', icon: 'vent', tab: 'land', step: 1, requires: ['volcano'], replaces: 'volcano', needs: [['eruptions', 5]], name: 'Supervolcanoes', volcanoes: 15, eruptionSize: 2.5, gauge: volcanoGauge },
+  { id: 'plates', icon: 'mountain', tab: 'land', step: 1, requires: ['volcano'], needs: [['water', 5]], name: 'Plate Tectonics', weatherMult: 1.5, gauge: () => [logLevel(rates.weathering, 100), `−${fmt(rates.weathering)} ppm CO₂/s`] },
+  { id: 'collision', icon: 'mountain', tab: 'land', step: 2, requires: ['plates'], needs: [['land', 35]], name: 'Collision', gauge: () => [state.mountains, `${pct(state.mountains)} mountains`] },
   // Ocean
-  { id: 'currents', icon: 'wave', tab: 'ocean', step: 2, name: 'Ocean Currents', cost: 300, iceShift: 4, gauge: () => [1 - state.ice, `${pct(state.ice)} ice`] },
-  { id: 'vents', icon: 'vent', tab: 'ocean', step: 2, name: 'Hydrothermal Vents', cost: 900, minerals: 1, ch4: 0.025, gauge: () => [logLevel(state.minerals, 1e4), `${fmt(state.minerals)} minerals`] },
-  // Moon: wake it first by tapping it.
-  { id: 'tides', icon: 'wave', tab: 'moon', step: 2, name: 'Tides', cost: 200, iceShift: 2, gauge: () => [openOcean() / (1 - state.land), `${pct(openOcean())} open water`] },
-  { id: 'pools', icon: 'wave', tab: 'moon', step: 2, requires: ['tides'], name: 'Tidal Pools', cost: 1500, boltMult: 2, gauge: soupGauge },
-  { id: 'tilt', icon: 'wave', tab: 'moon', step: 2, requires: ['pools'], name: 'Stable Tilt', cost: 8000, tilt: true,
-    gauge: () => { const n = SPECIES.filter(s => evolved(s.id)).length; return [n / SPECIES.length, `${n} species alive`]; } },
+  { id: 'currents', icon: 'wave', tab: 'ocean', step: 2, needs: [['water', 20]], name: 'Ocean Currents', iceShift: 4, gauge: () => [1 - state.ice, `${pct(state.ice)} ice`] },
+  { id: 'vents', icon: 'vent', tab: 'ocean', step: 2, requires: ['plates'], needs: [['water', 10]], name: 'Hydrothermal Vents', minerals: 1, ch4: 0.025, gauge: () => [logLevel(state.minerals, 1e4), `${fmt(state.minerals)} minerals`] },
+  // Moon: its tides need open water; its pull slowly lengthens the day.
+  { id: 'tides', icon: 'wave', tab: 'moon', step: 2, needs: [['water', 15]], name: 'Tides', iceShift: 2, gauge: () => [openOcean() / (1 - state.land), `${pct(openOcean())} open water`] },
+  { id: 'pools', icon: 'wave', tab: 'moon', step: 2, requires: ['tides'], needs: [['water', 30], ['minerals', 50]], name: 'Tidal Pools', boltMult: 2, gauge: soupGauge },
+  { id: 'tilt', icon: 'wave', tab: 'moon', step: 2, requires: ['pools'], needs: [['day', 16]], name: 'Stable Tilt', tilt: true,
+    gauge: () => { const n = SPECIES.filter(sp => evolved(sp.id)).length; return [n / SPECIES.length, `${n} species alive`]; } },
   // Life
-  { id: 'shallows', icon: 'wave', tab: 'oceanlife', step: 6, name: 'Shallow Seas', cost: 30000, dnaMult: { ocean: 2 }, gauge: dnaGauge('ocean') },
-  { id: 'soil', icon: 'plant', tab: 'landlife', step: 7, name: 'Soil', cost: 3e5, dnaMult: { ground: 2 }, gauge: dnaGauge('ground') },
+  { id: 'shallows', icon: 'wave', tab: 'oceanlife', step: 6, needs: [['species', 5]], name: 'Shallow Seas', dnaMult: { ocean: 2 }, gauge: dnaGauge('ocean') },
+  { id: 'soil', icon: 'plant', tab: 'landlife', step: 7, needs: [['plants', 1]], name: 'Soil', dnaMult: { ground: 2 }, gauge: dnaGauge('ground') },
 ];
 const RESEARCH_BY_ID = Object.fromEntries(RESEARCH.map(r => [r.id, r]));
 const IGNITION_TAPS = 80;
@@ -186,8 +201,7 @@ const NEWS = [
 
 const freshState = () => ({
   step: 0,
-  energy: 0,
-  totalEnergy: 0,
+  sunAge: 0,        // billion years since the sun ignited
   tempK: CORE_K,
   ignition: 0,      // 0..1, how far the sun is lit
   pressure: 0,      // nitrogen air, 0..1 bar
@@ -271,11 +285,6 @@ function mult(key) {
 const has = id => owned.has(id);
 const soupMult = () => (1 + Math.log10(1 + state.minerals)) * mult('boltMult');
 
-// Energy from fusion once the sun is lit: the best fusion upgrade owned, 3 E/s at plain ignition.
-function fusionRate() {
-  if (state.ignition < 1) return 0;
-  return RESEARCH.reduce((r, u) => (has(u.id) && u.fusion ? Math.max(r, u.fusion) : r), 3);
-}
 
 // A component is complete when all its research is done; the sun and moon then move to the background.
 const componentDone = tab => RESEARCH.filter(u => u.tab === tab).every(u => has(u.id));
@@ -283,13 +292,13 @@ const componentDone = tab => RESEARCH.filter(u => u.tab === tab).every(u => has(
 // The highest value of a research field among researched nodes, or `base`.
 const best = (key, base = 0) => RESEARCH.reduce((v, u) => (has(u.id) && u[key] ? Math.max(v, u[key]) : v), base);
 
-// A node shows up once its prerequisites are researched, its step is reached and the planet is warm enough.
-const researchVisible = u => state.step >= u.step && (u.requires || []).every(has) && (!u.minK || state.tempK >= u.minK);
+// A node shows up once its prerequisites are researched and its step is reached.
+const researchVisible = u => state.step >= u.step && (u.requires || []).every(has);
 
 // A researched node is hidden once the next node of its chain is researched.
 const superseded = u => RESEARCH.some(r => r.replaces === u.id && has(r.id));
 
-const canResearch = u => !has(u.id) && researchVisible(u) && state.energy >= u.cost;
+const canResearch = u => !has(u.id) && researchVisible(u) && (u.needs || []).every(needMet);
 
 const methaneHaze = () => clamp01(state.ch4 / 15) * (1 - clamp01(state.o2));
 
@@ -343,7 +352,7 @@ function climate() {
 
 function recalc() {
   const r = {
-    energy: fusionRate(), co2: 0, ch4: best('ch4'), minerals: best('minerals'), dna: 0, o2: 0, clouds: 0, green: 0, life: 0,
+    co2: 0, ch4: best('ch4'), minerals: best('minerals'), dna: 0, o2: 0, clouds: 0, green: 0, life: 0,
     dnaBy: { ocean: 0, ground: 0, atmosphere: 0 }, weathering: rates.weathering || 0,
     // Thunderstorms strike on their own, more often the stormier the sky.
     lightning: best('lightning') * clamp01(state.clouds / STORM_CLOUDS),
@@ -368,11 +377,6 @@ function recalc() {
   rates = r;
 }
 
-function addEnergy(n) {
-  state.energy += n;
-  state.totalEnergy += n;
-}
-
 // How well a species fits the current temperature: 1 inside its range, negative outside.
 function fitness(s, c) {
   const [lo, hi] = s.temp;
@@ -382,7 +386,8 @@ function fitness(s, c) {
 
 // Advance the world by dt seconds.
 function simulate(dt) {
-  addEnergy(rates.energy * dt);
+  // The sun ages once lit, and brightens with age (research Sunlight and its chain).
+  if (state.ignition >= 1) state.sunAge += dt / SUN_GYR_S;
 
   // An unlit sun cools back down when the player stops tapping.
   state.sinceTap = (state.sinceTap || 0) + dt;
@@ -733,8 +738,12 @@ function updateTab(tab, root) {
     } else if (e.kind === 'research') {
         li.className = 'item' + (canResearch(item) ? ' affordable' : '');
       q('.name').textContent = `Research ${item.name}`;
-      q('.meta').textContent = '';
-      q('.cost').textContent = `${fmt(item.cost)} E`;
+      // What it needs: met conditions get a tick, unmet ones show where the planet is now.
+      q('.meta').textContent = (item.needs || []).map(n => {
+        const k = NEEDS[n[0]];
+        return needMet(n) ? `✓ ${k.label(n[1])}` : `${k.label(n[1])} (now ${k.show(k.now())})`;
+      }).join(' · ');
+      q('.cost').textContent = canResearch(item) ? 'Ready' : '';
     } else {
       const p = pop(item.id), range = `${item.temp[0]} to ${item.temp[1]}°C`;
       q('.name').textContent = item.name;
@@ -768,7 +777,6 @@ function buy(e) {
   if (e.kind === 'researched') return;
   if (e.kind === 'research') {
     if (!canResearch(item)) return;
-    state.energy -= item.cost;
     owned.add(item.id);
     // The player learns what opened up only by looking.
     const opened = RESEARCH.filter(u => u.requires?.includes(item.id) && researchVisible(u)).map(u => u.name);
@@ -1146,17 +1154,18 @@ Scene.onZoneTap(zone => {
 });
 
 Scene.onCometTap((x, y) => {
-  const reward = Math.max(rates.energy * 60, 20);
-  addEnergy(reward);
+  // Comets bring water, dust and organic molecules: minerals for the sea, and DNA once there is life.
+  const reward = Math.max(20, state.minerals * 0.1);
+  state.minerals += reward;
   state.comets++;
-  let text = `+${fmt(reward)} energy`;
+  let text = `+${fmt(reward)} minerals`;
   if (state.step >= 5) {
     const dna = Math.max(5, rates.dna * 30);
     state.dna += dna;
     text += ` and +${fmt(dna)} DNA`;
   }
-  floatText(x, y, `+${fmt(reward)} E`);
-  toast('Comet!', `${text}. Comets bring water and organic molecules.`);
+  floatText(x, y, `+${fmt(reward)} minerals`);
+  toast('Comet!', `${text}.`);
   buzz([20, 40, 20]);
 });
 
@@ -1204,7 +1213,6 @@ function applyOffline() {
   const away = Math.min((Date.now() - state.lastTick) / 1000, OFFLINE_CAP_S);
   state.lastTick = Date.now();
   if (away < 10) return;
-  const before = state.energy;
   // Simulate in small steps so the climate and populations play out believably.
   const step = Math.min(2, Math.max(0.5, away / 3000));
   for (let done = 0; done < away; done += step) {
@@ -1212,7 +1220,7 @@ function applyOffline() {
     simulate(step * OFFLINE_RATE);
   }
   recalc();
-  toast('While you were away', `The planet kept turning for ${fmtTime(away)}: +${fmt(state.energy - before)} energy.`);
+  toast('While you were away', `The planet kept turning for ${fmtTime(away)}.`);
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -1234,7 +1242,8 @@ window.addEventListener('storage', e => {
 function renderHud(c) {
   el.temp.textContent = fmtTemp(c);
   el.tempSub.textContent = tempCaption(c);
-  const parts = [`<span><b>${fmt(state.energy)}</b> E <small>+${fmt(rates.energy)}/s</small></span>`];
+  const parts = [];
+  if (state.ignition >= 1) parts.push(`<span>Sun <b>${state.sunAge.toFixed(1)}</b> Gyr</span>`);
   if (state.step >= 1) parts.push(`<span><b>${fmt(state.co2)}</b> ppm CO₂</span>`);
   if (state.step >= 5) parts.push(`<span><b>${fmt(state.dna)}</b> DNA <small>+${fmt(rates.dna)}/s</small></span>`);
   if (state.step >= 6) parts.push(`<span><b>${state.o2.toFixed(2)}%</b> O₂</span>`);
