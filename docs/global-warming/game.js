@@ -42,14 +42,16 @@ const STEPS = [
   { name: 'Air', goal: 'Life rules the planet. The Age of Dinosaurs is coming next.', tab: 'airlife' },
 ];
 
-// Panel sections. Each one shows its buildings, upgrades and species once unlocked.
+// Panel sections. Each one shows its research and species once unlocked.
+// Story order: spin the planet (Core), the moon flies out, the spin locks (Land, the sun rises), light the sun,
+// research the Magnetic Field, then the air can stay (Atmosphere).
 const SECTIONS = {
-  sun: { name: 'Sun', unlocked: () => true },
-  moon: { name: 'Moon', unlocked: () => state.moonBorn },
-  // Order: light the sun, spin the planet (magnetic field), then the air can stay.
-  atmosphere: { name: 'Atmosphere', unlocked: () => has('magnet') },
-  core: { name: 'Core', unlocked: () => state.spinLocked },
+  core: { name: 'Core', unlocked: () => true },
   land: { name: 'Land', unlocked: () => state.spinLocked },
+  moon: { name: 'Moon', unlocked: () => state.moonBorn },
+  sun: { name: 'Sun', unlocked: () => state.spinLocked },
+  atmosphere: { name: 'Atmosphere', unlocked: () => has('magnet') },
+  noble: { name: 'Noble gases', unlocked: () => has('magnet') },
   ocean: { name: 'Ocean', unlocked: () => state.step >= 2 },
   oceanlife: { name: 'Ocean life', unlocked: () => state.step >= 5 },
   landlife: { name: 'Land life', unlocked: () => state.step >= 7 },
@@ -59,10 +61,11 @@ const SECTIONS = {
 };
 
 // The icon rail on the left. Each category opens a panel made of sections.
+// In the order the story reaches them.
 const CATEGORIES = [
-  { id: 'astronomy', icon: 'planet', name: 'Astronomy', sections: ['sun', 'moon'] },
-  { id: 'atmosphere', icon: 'cloud', name: 'Atmosphere', sections: ['atmosphere'], hint: 'The solar wind blows any air away. The planet needs a magnetic field.' },
-  { id: 'geology', icon: 'mountain', name: 'Geology', sections: ['core', 'land', 'ocean'], hint: 'The core is still. Swipe the planet to spin it.' },
+  { id: 'geology', icon: 'mountain', name: 'Geology', sections: ['core', 'land', 'ocean'] },
+  { id: 'astronomy', icon: 'planet', name: 'Astronomy', sections: ['moon', 'sun'], hint: 'The sky is empty. Swipe the planet to spin it.' },
+  { id: 'atmosphere', icon: 'cloud', name: 'Atmosphere', sections: ['atmosphere', 'noble'], hint: 'The solar wind blows any air away. The planet needs a magnetic field.' },
   { id: 'biology', icon: 'cell', name: 'Biology', sections: ['oceanlife', 'landlife', 'airlife', 'life'], hint: 'There is no life yet. Lightning in the ocean will start it.' },
   { id: 'science', icon: 'flask', name: 'Science', sections: [], hint: 'Science begins when humans evolve: math, chemistry and physics.' },
   { id: 'technology', icon: 'gear', name: 'Technology', sections: [], hint: 'Technology grows out of science. It begins with humans.' },
@@ -121,6 +124,15 @@ const RESEARCH = [
   { id: 'thawN2', icon: 'cloud', tab: 'atmosphere', step: 0, needs: [['temp', -210]], name: 'Nitrogen', thaw: 'n2', gauge: () => [state.pressure, `${state.pressure.toFixed(2)} bar`] },
   { id: 'thawCH4', icon: 'cloud', tab: 'atmosphere', step: 0, needs: [['temp', -161]], name: 'Methane', thaw: 'ch4', gauge: () => [logLevel(state.ch4, 30), `${state.ch4.toFixed(1)} ppm · +${gasWarming('ch4').toFixed(0)}°C`] },
   { id: 'thawCO2', icon: 'cloud', tab: 'atmosphere', step: 0, needs: [['temp', -78]], name: 'Carbon Dioxide', thaw: 'co2', gauge: () => [logLevel(state.co2, 1e5), `${fmt(state.co2)} ppm · +${gasWarming('co2').toFixed(0)}°C`] },
+  // Noble gases: they react with nothing, so they do nothing to the climate. Each can exist as gas above its
+  // boiling point. Helium leaks to space as fast as rocks make it, argon builds up from potassium decay in
+  // volcanic gas, radon decays within days; neon, krypton and xenon just stay.
+  { id: 'helium', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -269]], name: 'Helium', gauge: () => [clamp01(state.he / 6), `${state.he.toFixed(2)} ppm`] },
+  { id: 'neon', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -246]], name: 'Neon', gauge: () => [0.5, '18 ppm'] },
+  { id: 'argon', icon: 'cloud', tab: 'noble', step: 1, requires: ['volcano'], needs: [['temp', -186]], name: 'Argon', gauge: () => [state.ar / 9340, `${fmt(state.ar)} ppm`] },
+  { id: 'krypton', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -153]], name: 'Krypton', gauge: () => [0.3, '1.1 ppm'] },
+  { id: 'xenon', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -108]], name: 'Xenon', gauge: () => [0.1, '0.09 ppm'] },
+  { id: 'radon', icon: 'cloud', tab: 'noble', step: 1, requires: ['volcano'], needs: [['temp', -62]], name: 'Radon', gauge: () => [clamp01(state.rn / 6000), `${fmt(state.rn)} atoms/L`] },
   { id: 'clouds', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['thawN2'], needs: [['water', 10], ['air', 0.5]], name: 'Clouds', gauge: () => [state.clouds, `${pct(state.clouds)} cover`] },
   { id: 'evap', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['clouds'], needs: [['temp', 10]], name: 'Evaporation', cloudMult: 1.5, gauge: () => [clamp01(rates.clouds / 0.05), `+${(rates.clouds * 100).toFixed(1)}% cover/s`] },
   { id: 'rain', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['clouds'], needs: [['clouds', 10]], name: 'Rain', gauge: rainGauge },
@@ -214,6 +226,7 @@ const freshState = () => ({
   land: START_LAND,     // share of the planet that is land
   mountains: 0,         // 0..1, how much of the land is mountains
   aerosols: 0,          // 0..1, eruption sulfate high in the air
+  he: 0, ar: 0, rn: 0,  // noble gases that change over time: helium and argon in ppm, radon in atoms per liter
   ash: 0,               // ash from eruptions on the ice
   eruptions: 0,
   spin: 0,          // 0..1, how fast the planet turns
@@ -414,6 +427,12 @@ function simulate(dt) {
   // moon's tides pull on it. Full spin locks it, and the clock starts.
   if (state.spinLocked) state.clock += 24 * dt / DAY_S;
   else state.spin = Math.max(0, state.spin - (0.04 + 0.12 * state.spin + (state.moonBorn ? TIDE_DRAG : 0)) * dt);
+
+  // Noble gases react with nothing. Helium escapes to space about as fast as decaying rock makes it; argon-40
+  // comes out with volcanic gas, from potassium decay, until it is about 0.93% of the air; radon has a 3.8-day half-life.
+  if (has('helium')) state.he += (0.1 - state.he * 0.02) * dt;
+  if (has('argon')) state.ar = Math.min(9340, state.ar + 0.5 * volcanoes() * dt);
+  if (has('radon')) state.rn += (1000 / DAY_S - state.rn * Math.LN2 / (3.8 * DAY_S)) * dt;
 
   // Volcanoes slowly build new land; colliding plates pile it up into mountains.
   state.land = Math.min(MAX_LAND, state.land + 0.00004 * volcanoes() * (1 - state.land / MAX_LAND) * dt);
@@ -709,7 +728,7 @@ function updateTab(tab, root) {
   }
   if (tab === 'core') {
     setMeter(root, 'm-day', state.spin, state.spinLocked ? 'Locked' : pct(state.spin));
-    note('m-core', '');
+    note('m-core', state.spinLocked ? '' : 'Swipe the planet to spin it.');
   }
   if (tab === 'land') {
     const cool = aerosolCooling();
@@ -787,7 +806,7 @@ function buy(e) {
 
 /* ================= Rail and panels ================= */
 
-let currentCat = 'astronomy';
+let currentCat = 'geology';
 
 const visibleSections = cat => CATEGORY_BY_ID[cat].sections.filter(sec => SECTIONS[sec].unlocked());
 
@@ -1122,10 +1141,7 @@ Scene.onCloudTap((kind, zone, x, y) => {
 // Tapping the planet opens the component under your finger. Before the ocean and land open,
 // the frozen surface and bare rock lead to the Core (volcanoes).
 Scene.onZoneTap((zone, x, y) => {
-  if (zone !== 'atmosphere' && !state.spinLocked) {
-    hint(CATEGORY_BY_ID.geology.hint, x, y);
-    return;
-  }
+  if (zone !== 'atmosphere' && !state.spinLocked) zone = 'core';
   if (zone === 'ocean') zone = state.step >= 5 ? 'oceanlife' : state.step >= 2 ? 'ocean' : 'land';
   if (zone === 'ground') zone = state.step >= 7 ? 'landlife' : 'land';
   if (!SECTIONS[zone].unlocked()) {
@@ -1183,7 +1199,7 @@ function newGame() {
   $('#gameover').classList.add('hidden');
   recalc();
   renderRail();
-  openTab('sun');
+  openTab('core');
 }
 
 $('#gameover-restart').addEventListener('click', newGame);
@@ -1345,7 +1361,7 @@ recalc();
 applyOffline();
 renderRail();
 updateScene(tempC());
-openCategory('astronomy', false);
+openCategory('geology', false);
 if (state.over) showGameOver();
 scheduleComet();
 requestAnimationFrame(frame);
