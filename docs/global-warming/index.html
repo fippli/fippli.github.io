@@ -26,22 +26,14 @@
       <div id="hud-line" class="hud-line"></div>
     </header>
 
-    <div class="spacer"></div>
+    <div id="main">
+      <nav id="rail" aria-label="Panels"></nav>
+      <div id="column">
+        <div class="spacer"></div>
 
-    <div id="ticker"><span id="news">Tap the dark sun to light it.</span></div>
+        <div id="ticker"><span id="news">Tap the dark sun to light it.</span></div>
 
-    <section id="sheet">
-      <nav id="tabs">
-        <button data-tab="sun" class="active">Sun</button>
-        <button data-tab="moon">Moon</button>
-        <button data-tab="atmosphere">Air</button>
-        <button data-tab="core">Core</button>
-        <button data-tab="ocean">Sea</button>
-        <button data-tab="ground">Land</button>
-        <button data-tab="life">Life</button>
-        <button data-tab="world">World</button>
-      </nav>
-
+        <section id="sheet">
       <main id="panel">
         <div id="buy-amount" class="buy-amount" role="group" aria-label="Buy amount">
           <button data-amount="1" class="active">x1</button>
@@ -49,14 +41,7 @@
           <button data-amount="100">x100</button>
           <button data-amount="max">Max</button>
         </div>
-        <div id="sun" class="tab active"></div>
-        <div id="moon" class="tab"></div>
-        <div id="core" class="tab"></div>
-        <div id="ocean" class="tab"></div>
-        <div id="ground" class="tab"></div>
-        <div id="atmosphere" class="tab"></div>
-        <div id="life" class="tab"></div>
-        <div id="world" class="tab">
+        <div id="world">
           <h3>Steps</h3>
           <ul id="step-list" class="milestones"></ul>
           <h3>Planet</h3>
@@ -64,7 +49,9 @@
           <button id="reset" class="danger">Reset game</button>
         </div>
       </main>
-    </section>
+        </section>
+      </div>
+    </div>
   </div>
 
   <div id="gameover" class="hidden" role="dialog" aria-labelledby="gameover-title">

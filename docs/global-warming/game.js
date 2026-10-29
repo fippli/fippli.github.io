@@ -19,37 +19,53 @@ const THERMAL_LAG_S = 5;           // how fast temperature follows its target on
 const OCEAN_LAG_S = 60;            // extra lag once oceans are open: water takes long to heat
 
 // Frozen gases: the temperature (K) where each one can first be thawed into air.
-// Which gases actually thaw is the player's choice (Air panel); see spec.md, "Choosing what to thaw".
+// Which gases actually thaw is the player's choice (Atmosphere panel); see spec.md, "Choosing what to thaw".
 const GASES = [
-  { id: 'n2', at: 63, title: 'Nitrogen can thaw', text: 'At −210 °C nitrogen ice can melt into air. Choose it in the Air panel.' },
-  { id: 'ch4', at: 112, title: 'Methane can thaw', text: 'At −161 °C methane can become gas. Choose it in the Air panel.' },
-  { id: 'co2', at: 195, title: 'CO₂ can thaw', text: 'At −78 °C CO₂ ice can turn to gas. Choose it in the Air panel.' },
+  { id: 'n2', at: 63, title: 'Nitrogen can thaw', text: 'At −210 °C nitrogen ice can melt into air. Choose it in the Atmosphere panel.' },
+  { id: 'ch4', at: 112, title: 'Methane can thaw', text: 'At −161 °C methane can become gas. Choose it in the Atmosphere panel.' },
+  { id: 'co2', at: 195, title: 'CO₂ can thaw', text: 'At −78 °C CO₂ ice can turn to gas. Choose it in the Atmosphere panel.' },
 ];
 
 // The early game unlocks the planet in a fixed order. See spec.md, "Unlock sequence".
 const STEPS = [
-  { name: 'Light the sun', goal: 'Tap the dark sun until it ignites. As the planet warms, choose which frozen gases to thaw in the Air panel.' },
-  { name: 'Melt ice', goal: 'Reach 0°C. Build volcanoes in the Core, brighten the Sun and thaw greenhouse gases in the Air panel.', unlockText: 'The sun is lit and burns on its own. Tap it to open its upgrades. Now melt the snowball.', tab: 'core' },
+  { name: 'Light the sun', goal: 'Tap the dark sun fast until it ignites. If you stop, its core cools down again.' },
+  { name: 'Melt ice', goal: 'Reach 0°C. Build volcanoes in the Core, brighten the Sun and thaw greenhouse gases in the Atmosphere panel.', unlockText: 'The sun is lit and burns on its own. Tap it to open its upgrades. Now melt the snowball.', tab: 'core' },
   { name: 'Ocean', goal: 'Open 30% of the planet to water. Dark water absorbs sunlight, so the thaw speeds up: turn volcanic activity down in the Core to avoid a hothouse. The moon can be woken now.', unlockText: 'Open water at 0°C! Warming speeds up now: turn volcanic activity down in the Core. Tap the moon to wake it.', tab: 'ocean' },
   { name: 'Clouds', goal: `Warm water evaporates. Build cloud cover to ${STORM_CLOUDS * 100}% so storms form. Tap clouds for rain: it washes minerals into the sea.`, unlockText: 'Water vapor rises. The first clouds form. Solar wind is stripping the air: a Magnetic Field in the Core stops it.' },
   { name: 'Thunder', goal: 'Tap storm clouds to strike lightning into the ocean. Fill the primordial soup.', unlockText: 'Storms! Tap a dark cloud to strike lightning.' },
-  { name: 'Life', goal: 'The first cell is spreading through the ocean.', unlockText: 'Lightning in the soup made something... alive. The first cell!', tab: 'ocean' },
-  { name: 'Water evolution', goal: `Evolve ocean life with DNA and keep the planet between ${LIFE_WINDOW[0]} and ${LIFE_WINDOW[1]}°C. Land opens at ${OZONE_FOR_LAND * 100}% ozone.`, unlockText: 'Life is established. Spend DNA to evolve. Life cools the planet: watch the temperature.', tab: 'ocean' },
-  { name: 'Land', goal: 'Evolve land life. The first species that flies opens the sky.', unlockText: 'The ozone layer shields the land. Life can leave the water!', tab: 'ground' },
-  { name: 'Air', goal: 'Life rules the planet. The Age of Dinosaurs is coming next.', unlockText: 'Something has taken to the air. The sky is alive!', tab: 'atmosphere' },
+  { name: 'Life', goal: 'The first cell is spreading through the ocean.', unlockText: 'Lightning in the soup made something... alive. The first cell!', tab: 'oceanlife' },
+  { name: 'Water evolution', goal: `Evolve ocean life with DNA and keep the planet between ${LIFE_WINDOW[0]} and ${LIFE_WINDOW[1]}°C. Land opens at ${OZONE_FOR_LAND * 100}% ozone.`, unlockText: 'Life is established. Spend DNA to evolve. Life cools the planet: watch the temperature.', tab: 'oceanlife' },
+  { name: 'Land', goal: 'Evolve land life. The first species that flies opens the sky.', unlockText: 'The ozone layer shields the land. Life can leave the water!', tab: 'landlife' },
+  { name: 'Air', goal: 'Life rules the planet. The Age of Dinosaurs is coming next.', unlockText: 'Something has taken to the air. The sky is alive!', tab: 'airlife' },
 ];
 
-// Component panels, shown in the tab bar once unlocked.
-const TABS = {
-  sun: { unlocked: () => true, hint: '' },
-  moon: { unlocked: () => state.step >= 2, hint: 'The moon is asleep. It needs an ocean to pull on.' },
-  atmosphere: { unlocked: () => state.step >= 1 || state.tempK >= GASES[0].at, hint: 'Nothing can thaw yet. Warm the planet with the sun.' },
-  core: { unlocked: () => state.step >= 1, hint: 'Light the sun first.' },
-  ocean: { unlocked: () => state.step >= 2, hint: 'The ocean is frozen solid. Melt the ice first.' },
-  ground: { unlocked: () => state.step >= 7, hint: 'The land is lifeless rock. Life must leave the ocean first.' },
-  life: { unlocked: () => state.step >= 5, hint: 'There is no life yet. Lightning in the ocean will start it.' },
-  world: { unlocked: () => true, hint: '' },
+// Panel sections. Each one shows its buildings, upgrades and species once unlocked.
+const SECTIONS = {
+  sun: { name: 'Sun', unlocked: () => true },
+  moon: { name: 'Moon', unlocked: () => state.step >= 2, hint: 'The moon is asleep. It needs an ocean to pull on.' },
+  atmosphere: { name: 'Atmosphere', unlocked: () => state.step >= 1 || state.tempK >= GASES[0].at },
+  core: { name: 'Core', unlocked: () => state.step >= 1 },
+  ocean: { name: 'Ocean', unlocked: () => state.step >= 2 },
+  oceanlife: { name: 'Ocean life', unlocked: () => state.step >= 5 },
+  landlife: { name: 'Land life', unlocked: () => state.step >= 7 },
+  airlife: { name: 'Air life', unlocked: () => state.step >= 8 },
+  life: { name: 'Tree of life', unlocked: () => state.step >= 5 },
+  world: { name: 'World', unlocked: () => true },
 };
+
+// The icon rail on the left. Each category opens a panel made of sections.
+const CATEGORIES = [
+  { id: 'astronomy', icon: 'planet', name: 'Astronomy', sections: ['sun', 'moon'] },
+  { id: 'atmosphere', icon: 'cloud', name: 'Atmosphere', sections: ['atmosphere'], hint: 'Nothing can thaw yet. Warm the planet with the sun.' },
+  { id: 'geology', icon: 'mountain', name: 'Geology', sections: ['core', 'ocean'], hint: 'Light the sun first.' },
+  { id: 'biology', icon: 'cell', name: 'Biology', sections: ['oceanlife', 'landlife', 'airlife', 'life'], hint: 'There is no life yet. Lightning in the ocean will start it.' },
+  { id: 'science', icon: 'flask', name: 'Science', sections: [], hint: 'Science begins when humans evolve: math, chemistry and physics.' },
+  { id: 'technology', icon: 'gear', name: 'Technology', sections: [], hint: 'Technology grows out of science. It begins with humans.' },
+  { id: 'world', icon: 'globe', name: 'World', sections: ['world'] },
+];
+const CATEGORY_BY_ID = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
+const categoryOf = section => CATEGORIES.find(c => c.sections.includes(section));
+const categoryUnlocked = c => c.sections.some(sec => SECTIONS[sec].unlocked());
 
 // Buildings bought with Energy. Cost grows 15% per copy.
 const BUILDINGS = [
@@ -71,7 +87,7 @@ const UPGRADES = [
   { id: 'sun3', icon: 'sunicon', tab: 'sun', step: 2, requires: 'sun2', name: 'Sun Matures III', desc: 'The sun brightens to 93% of today.', cost: 20000, sun: 0.93 },
   { id: 'sun4', icon: 'sunicon', tab: 'sun', step: 5, requires: 'sun3', name: 'Sun Matures IV', desc: 'The sun reaches today\'s brightness.', cost: 100000, sun: 1 },
   { id: 'uv', icon: 'sunicon', tab: 'sun', step: 5, name: 'UV Mutations', desc: 'Sunlight nudges DNA: all life makes 25% more DNA.', cost: 8000, dnaMult: { all: 1.25 } },
-  // Air: choose what to thaw, then weather.
+  // Atmosphere: choose what to thaw, then weather.
   { id: 'thawN2', icon: 'cloud', tab: 'atmosphere', step: 0, minK: 63, name: 'Thaw Nitrogen', desc: 'Thicker air: every greenhouse gas works better, and clouds can form later.', cost: 5, thaw: 'n2' },
   { id: 'thawCH4', icon: 'cloud', tab: 'atmosphere', step: 0, minK: 112, name: 'Thaw Methane', desc: 'Fast, strong warming, but an orange haze dims the sun. Oxygen from life destroys it later.', cost: 15, thaw: 'ch4' },
   { id: 'thawCO2', icon: 'cloud', tab: 'atmosphere', step: 0, minK: 195, name: 'Thaw CO₂', desc: 'Steady, long-lasting warming that volcanoes and weathering control later.', cost: 40, thaw: 'co2' },
@@ -86,12 +102,14 @@ const UPGRADES = [
   { id: 'pools', icon: 'wave', tab: 'moon', step: 2, requires: 'tides', name: 'Tidal Pools', desc: 'Pools left by the tide concentrate chemicals: lightning makes 2x soup.', cost: 1500, boltMult: 2 },
   { id: 'tilt', icon: 'wave', tab: 'moon', step: 2, requires: 'pools', name: 'Stable Tilt', desc: 'The moon steadies the planet\'s tilt: species die back half as fast outside their range.', cost: 8000, tilt: true },
   // Ocean and land life.
-  { id: 'shallows', icon: 'wave', tab: 'ocean', step: 6, name: 'Shallow Seas', desc: 'Ocean life makes 2x DNA.', cost: 30000, dnaMult: { ocean: 2 } },
-  { id: 'soil', icon: 'plant', tab: 'ground', step: 7, name: 'First Soil', desc: 'Land life makes 2x DNA.', cost: 3e5, dnaMult: { ground: 2 } },
+  { id: 'shallows', icon: 'wave', tab: 'oceanlife', step: 6, name: 'Shallow Seas', desc: 'Ocean life makes 2x DNA.', cost: 30000, dnaMult: { ocean: 2 } },
+  { id: 'soil', icon: 'plant', tab: 'landlife', step: 7, name: 'First Soil', desc: 'Land life makes 2x DNA.', cost: 3e5, dnaMult: { ground: 2 } },
 ];
 const UPGRADE_BY_ID = Object.fromEntries(UPGRADES.map(u => [u.id, u]));
 const MOON_WAKE_TAPS = 20;
 const IGNITION_TAPS = 80;
+const IGNITION_GRACE_S = 0.6;   // a pause this long between taps lets the core start cooling
+const IGNITION_DECAY = 0.08;    // ignition lost per second while not tapping
 
 // The tree of life for this slice. Habitat (domain) decides which step a species needs.
 // dna and o2 are per second at full population. temp is the global mean range (°C) the species can live in.
@@ -120,8 +138,9 @@ const SPECIES = [
 const SPECIES_BY_ID = Object.fromEntries(SPECIES.map(s => [s.id, s]));
 // Step a habitat needs before its species can evolve. Flyers only need land; evolving one opens step 8.
 const DOMAIN_STEP = { ocean: 6, ground: 7, atmosphere: 7 };
-// Flyers are listed on the Land tab until the sky opens.
-const speciesTab = s => (s.domain === 'atmosphere' && state.step < 8 ? 'ground' : s.domain);
+// Flyers are listed with land life until the sky opens.
+const SPECIES_SECTION = { ocean: 'oceanlife', ground: 'landlife', atmosphere: 'airlife' };
+const speciesTab = s => (s.domain === 'atmosphere' && state.step < 8 ? 'landlife' : SPECIES_SECTION[s.domain]);
 
 const NEWS = [
   { step: 0, items: ['Forecast: dark. Also cold. Mostly dark.', 'Planet reports "it\'s a bit chilly, 35 kelvin".', 'Sun still asleep. Planet tries knocking.', 'Nitrogen frozen solid. Nobody can breathe it anyway.'] },
@@ -240,10 +259,10 @@ function upgradeLock(u) {
 
 const methaneHaze = () => clamp01(state.ch4 / 15) * (1 - clamp01(state.o2));
 
-// Sun brightness as a share of today's: rises to 70% while igniting (cubed, so the first glow is faint),
-// then the "Sun Matures" upgrades brighten it toward today's level, as the real sun did.
+// Sun brightness as a share of today's: dark until ignition, then 70%, and the "Sun Matures"
+// upgrades brighten it toward today's level, as the real sun did.
 function sunBrightness() {
-  const lit = SUN_IGNITED * state.ignition ** 3;
+  const lit = state.ignition >= 1 ? SUN_IGNITED : 0;
   return UPGRADES.reduce((s, u) => (owned.has(u.id) && u.sun ? Math.max(s, u.sun) : s), lit);
 }
 
@@ -317,7 +336,13 @@ function fitness(s, c) {
 function simulate(dt) {
   addEnergy(rates.energy * dt);
 
-  // Thawed gases turn into air (the player chose which ones in the Air panel).
+  // An unlit sun cools back down when the player stops tapping.
+  state.sinceTap = (state.sinceTap || 0) + dt;
+  if (state.ignition < 1 && state.sinceTap > IGNITION_GRACE_S) {
+    state.ignition = Math.max(0, state.ignition - IGNITION_DECAY * Math.min(dt, state.sinceTap - IGNITION_GRACE_S));
+  }
+
+  // Thawed gases turn into air (the player chose which ones in the Atmosphere panel).
   if (has('thawN2')) state.pressure = Math.min(1, state.pressure + 0.08 * dt);
   // Without a magnetic field the solar wind slowly strips the air away, as it did on Mars.
   if (state.step >= 3 && !has('magnet')) state.pressure = Math.max(0.2, state.pressure - 0.0003 * dt);
@@ -456,9 +481,9 @@ function checkSteps() {
   showNews(s.unlockText);
   buzz([30, 50, 30]);
   recalc();
-  renderTabs();
+  renderRail();
   if (s.tab) openTab(s.tab);
-  else renderTab(currentTab, true);
+  else renderCategory(true);
 }
 
 /* ================= Formatting ================= */
@@ -513,12 +538,16 @@ function meterHtml(label, cls) {
 }
 
 function headHtml(tab) {
-  const goal = '<p class="goal"></p>';
+  const goal = '';
   if (tab === 'sun') {
     return `${goal}${state.step === 0 ? meterHtml('Ignition', 'm-ignite') : meterHtml('Sun brightness', 'm-sun')}<p class="note m-fusion"></p>`;
   }
   if (tab === 'moon') return `${goal}${meterHtml('Moon', 'm-moon')}<p class="note m-moon-note"></p>`;
-  if (tab === 'atmosphere') return `${goal}<p class="note m-air"></p>`;
+  if (tab === 'atmosphere') {
+    return `${state.step >= 3 ? meterHtml('Clouds', 'm-clouds') : ''}
+      ${state.step >= 6 ? meterHtml('Ozone layer', 'm-ozone') : ''}
+      <p class="note m-air"></p>`;
+  }
   if (tab === 'core') {
     return `${goal}<p class="note m-core"></p>
       ${count('volcano') ? `<div class="meter-row"><span>Volcanic activity</span><b class="m-volc-v"></b></div>
@@ -527,9 +556,7 @@ function headHtml(tab) {
   if (tab === 'ocean') {
     return `${goal}
       ${meterHtml('Open ocean', 'm-open')}
-      ${state.step >= 3 ? meterHtml('Clouds', 'm-clouds') : ''}
       ${state.step >= 4 ? meterHtml('Primordial soup', 'm-soup') : ''}
-      ${state.step >= 6 ? meterHtml('Ozone layer', 'm-ozone') : ''}
       ${state.step >= 3 ? '<p class="note m-minerals"></p>' : ''}`;
   }
   return goal;
@@ -587,8 +614,6 @@ function buildingMeta(b) {
 const parentReady = s => pop(s.parent) >= 0.5;
 
 function updateTab(tab, root) {
-  const goal = root.querySelector('.goal');
-  if (goal) goal.textContent = `Goal: ${STEPS[state.step].goal}`;
   const note = (cls, text) => {
     const n = root.querySelector(`.${cls}`);
     if (n) n.textContent = text;
@@ -597,7 +622,7 @@ function updateTab(tab, root) {
     setMeter(root, 'm-ignite', state.ignition);
     setMeter(root, 'm-sun', sunBrightness(), `${pct(sunBrightness())} of today`);
     note('m-fusion', state.ignition < 1
-      ? 'Each tap fuses hydrogen into helium and squeezes the core hotter.'
+      ? 'Each tap fuses hydrogen into helium and squeezes the core hotter. Stop tapping and it cools.'
       : `Fusion: ${fmt(fusionRate())} E/s.${componentDone('sun') ? ' The sun is complete and rests in the background.' : ''}`);
   }
   if (tab === 'moon') {
@@ -606,6 +631,8 @@ function updateTab(tab, root) {
   }
   if (tab === 'atmosphere') {
     const frozen = [state.ch4Ice > 0 && 'methane', state.co2Ice > 0 && 'CO₂', !has('thawN2') && 'nitrogen'].filter(Boolean);
+    setMeter(root, 'm-clouds', state.clouds / STORM_CLOUDS, pct(state.clouds));
+    setMeter(root, 'm-ozone', ozone() / OZONE_FOR_LAND, `${pct(ozone())} (O₂ ${state.o2.toFixed(2)}%)`);
     note('m-air', `Air ${state.pressure.toFixed(2)} bar · CO₂ ${fmt(state.co2)} ppm · methane ${state.ch4.toFixed(1)} ppm · greenhouse +${rates.climate.greenhouse.toFixed(0)}°C${frozen.length ? ` · still frozen: ${frozen.join(', ')}` : ''}`);
   }
   if (tab === 'core') {
@@ -615,9 +642,7 @@ function updateTab(tab, root) {
   }
   if (tab === 'ocean') {
     setMeter(root, 'm-open', openOcean() / 0.3, pct(openOcean()));
-    setMeter(root, 'm-clouds', state.clouds / STORM_CLOUDS, pct(state.clouds));
     setMeter(root, 'm-soup', state.soup / SOUP_FULL);
-    setMeter(root, 'm-ozone', ozone() / OZONE_FOR_LAND, `${pct(ozone())} (O₂ ${state.o2.toFixed(2)}%)`);
     const minerals = root.querySelector('.m-minerals');
     if (minerals) minerals.textContent = `Minerals: ${fmt(state.minerals)}, lightning makes x${soupMult().toFixed(2)} soup`;
   }
@@ -691,7 +716,6 @@ function buy(e) {
     owned.add(item.id);
     if (['sun', 'moon'].includes(item.tab) && componentDone(item.tab)) {
       toast(`${item.tab === 'sun' ? 'Sun' : 'Moon'} complete`, 'It moves to the background and keeps its effects.');
-      renderTabs();
     }
   } else {
     if (evolved(item.id) || isExtinct(item.id) || state.dna < item.cost || !parentReady(item)) return;
@@ -701,50 +725,107 @@ function buy(e) {
   }
   buzz(10);
   recalc();
-  renderTab(currentTab);
+  renderCategory();
 }
 
-/* ================= Tabs ================= */
+/* ================= Rail and panels ================= */
 
-let currentTab = 'sun';
+let currentCat = 'astronomy';
 
-// Tabs appear as components unlock; a completed sun or moon leaves the bar (tap the body itself to open it).
-function renderTabs() {
-  document.querySelectorAll('#tabs button').forEach(btn => {
-    const tab = btn.dataset.tab;
-    const done = (tab === 'sun' || tab === 'moon') && componentDone(tab) && currentTab !== tab;
-    btn.classList.toggle('hidden', !TABS[tab].unlocked() || done);
+const visibleSections = cat => CATEGORY_BY_ID[cat].sections.filter(sec => SECTIONS[sec].unlocked());
+
+// Build one panel per category, with a titled block per section.
+function buildPanels() {
+  const world = $('#world');
+  for (const c of CATEGORIES) {
+    const div = document.createElement('div');
+    div.id = `cat-${c.id}`;
+    div.className = 'tab';
+    div.innerHTML = `<p class="goal"></p>${c.sections.map(sec => `
+      <section class="section" data-section="${sec}">
+        <h3 class="section-title">${SECTIONS[sec].name}</h3>
+        ${sec === 'world' ? '' : `<div id="${sec}"></div>`}
+      </section>`).join('')}`;
+    if (c.sections.includes('world')) div.querySelector('[data-section="world"]').appendChild(world);
+    $('#panel').appendChild(div);
+  }
+  const rail = $('#rail');
+  for (const c of CATEGORIES) {
+    const btn = document.createElement('button');
+    btn.dataset.cat = c.id;
+    btn.title = btn.ariaLabel = c.name;
+    btn.innerHTML = `${spriteImg(c.icon)}<i class="dot"></i>`;
+    btn.addEventListener('click', () => {
+      // Tapping the open category folds the panel away to show more of the planet.
+      if (c.id === currentCat) el.sheet.classList.toggle('collapsed');
+      else openCategory(c.id);
+    });
+    rail.appendChild(btn);
+  }
+}
+
+// Something in this category can be bought right now.
+function hasAffordable(cat) {
+  return visibleSections(cat).some(sec => tabEntries(sec).some(({ kind, item }) => {
+    if (kind === 'building') return state.energy >= bulkCost(item, 1);
+    if (kind === 'upgrade') return state.energy >= item.cost && !upgradeLock(item);
+    return !evolved(item.id) && !isExtinct(item.id) && state.dna >= item.cost && parentReady(item);
+  }));
+}
+
+function renderRail() {
+  document.querySelectorAll('#rail button').forEach(btn => {
+    const c = CATEGORY_BY_ID[btn.dataset.cat];
+    const open = btn.dataset.cat === currentCat && !el.sheet.classList.contains('collapsed');
+    btn.classList.toggle('locked', !categoryUnlocked(c));
+    btn.classList.toggle('active', open);
+    btn.classList.toggle('ready', categoryUnlocked(c) && hasAffordable(c.id));
   });
 }
 
-function openTab(tab, expand = true) {
-  if (!TABS[tab].unlocked()) {
-    showNews(TABS[tab].hint);
-    toast('Locked', TABS[tab].hint);
-    return;
+// The light update skips the world stats and the tree of life, which have their own slower timers.
+function renderCategory(force = false, light = false) {
+  const root = $(`#cat-${currentCat}`), visible = visibleSections(currentCat);
+  root.querySelector('.goal').textContent = `Goal: ${STEPS[state.step].goal}`;
+  root.querySelectorAll('.section').forEach(n => {
+    n.classList.toggle('hidden', !visible.includes(n.dataset.section));
+    n.querySelector('.section-title').classList.toggle('hidden', visible.length < 2);
+  });
+  for (const sec of visible) {
+    if (sec === 'world' || sec === 'life') {
+      if (light) continue;
+      if (sec === 'world') renderWorld();
+      else renderLife();
+    } else renderTab(sec, force);
   }
-  currentTab = tab;
-  renderTabs();
-  document.querySelectorAll('#tabs button').forEach(n => n.classList.toggle('active', n.dataset.tab === tab));
-  document.querySelectorAll('.tab').forEach(n => n.classList.toggle('active', n.id === tab));
-  $('#buy-amount').classList.toggle('hidden', !BUILDINGS.some(b => b.tab === tab && state.step >= b.step));
-  if (expand) el.sheet.classList.remove('collapsed');
-  if (tab === 'world') renderWorld();
-  else if (tab === 'life') renderLife();
-  else renderTab(tab);
+  $('#buy-amount').classList.toggle('hidden', !BUILDINGS.some(b => visible.includes(b.tab) && state.step >= b.step));
 }
 
-document.querySelectorAll('#tabs button').forEach(btn => btn.addEventListener('click', () => {
-  // Tapping the open tab folds the sheet away to show more of the planet.
-  if (btn.dataset.tab === currentTab) el.sheet.classList.toggle('collapsed');
-  else openTab(btn.dataset.tab);
-}));
+function openCategory(cat, expand = true) {
+  const c = CATEGORY_BY_ID[cat];
+  if (!categoryUnlocked(c)) {
+    showNews(c.hint);
+    toast(`${c.name}: locked`, c.hint);
+    return;
+  }
+  currentCat = cat;
+  document.querySelectorAll('#panel > .tab').forEach(n => n.classList.toggle('active', n.id === `cat-${cat}`));
+  if (expand) el.sheet.classList.remove('collapsed');
+  renderCategory();
+  renderRail();
+}
+
+// Open the category that holds a section and bring the section into view.
+function openTab(section) {
+  openCategory(categoryOf(section).id);
+  if (visibleSections(currentCat).length > 1) $(`[data-section="${section}"]`).scrollIntoView({ block: 'start' });
+}
 
 document.querySelectorAll('#buy-amount button').forEach(btn => btn.addEventListener('click', () => {
   document.querySelectorAll('#buy-amount button').forEach(n => n.classList.remove('active'));
   btn.classList.add('active');
   buyAmount = btn.dataset.amount === 'max' ? 'max' : Number(btn.dataset.amount);
-  renderTab(currentTab);
+  renderCategory();
 }));
 
 /* ================= Life tab: the tree of life ================= */
@@ -920,11 +1001,11 @@ function randomNews() {
 // Before ignition, each tap squeezes the core hotter. Once lit, the sun burns on its own and a tap opens its panel.
 Scene.onSunTap((x, y) => {
   state.clicks++;
+  state.sinceTap = 0;
   Scene.fusion();
   if (state.ignition < 1) {
     state.ignition = Math.min(1, state.ignition + 1 / IGNITION_TAPS);
-    addEnergy(1);
-    floatText(x, y - 10, '+1 E · ignition');
+    floatText(x, y - 10, state.ignition >= 1 ? 'Ignition!' : pct(state.ignition));
     buzz(6);
     return;
   }
@@ -938,15 +1019,14 @@ Scene.onSunTap((x, y) => {
 
 Scene.onMoonTap((x, y) => {
   if (state.step < 2) {
-    toast('The moon is asleep', TABS.moon.hint);
+    toast('The moon is asleep', SECTIONS.moon.hint);
     return;
   }
   if (!moonAwake()) {
     state.moonWake = Math.min(1, state.moonWake + 1 / MOON_WAKE_TAPS);
     floatText(x, y - 10, moonAwake() ? 'Awake!' : 'zzz');
     if (moonAwake()) {
-      toast('The moon wakes up', 'It pulls on the ocean. Open the Moon panel for tides.');
-      renderTabs();
+      toast('The moon wakes up', 'It pulls on the ocean. Its upgrades are under Astronomy.');
     }
   }
   openTab('moon');
@@ -985,8 +1065,12 @@ Scene.onCloudTap((kind, zone, x, y) => {
 // Tapping the planet opens the component under your finger. Before the ocean and land open,
 // the frozen surface and bare rock lead to the Core (volcanoes).
 Scene.onZoneTap(zone => {
-  if (zone === 'ocean' && !TABS.ocean.unlocked()) zone = 'core';
-  if (zone === 'ground' && !TABS.ground.unlocked()) zone = 'core';
+  if (zone === 'ocean') zone = state.step >= 5 ? 'oceanlife' : state.step >= 2 ? 'ocean' : 'core';
+  if (zone === 'ground') zone = state.step >= 7 ? 'landlife' : 'core';
+  if (!SECTIONS[zone].unlocked()) {
+    toast('Locked', CATEGORY_BY_ID.atmosphere.hint);
+    return;
+  }
   openTab(zone);
   buzz(4);
 });
@@ -1037,7 +1121,7 @@ function newGame() {
   Object.keys(tabKeys).forEach(k => delete tabKeys[k]);
   $('#gameover').classList.add('hidden');
   recalc();
-  renderTabs();
+  renderRail();
   openTab('sun');
   toast('Fresh planet', 'Dark and frozen at 35 K. Tap the sun.');
 }
@@ -1092,7 +1176,8 @@ function updateScene(c) {
   // The scene's colors were tuned for big swings; a warm-but-livable planet should still look blue.
   Scene.setClimate(c < 14 ? c - 14 : (c - 14) * 0.4);
   Scene.setIce(iceCover());
-  Scene.setAtmosphere(state.pressure, methaneHaze(), sunBrightness());
+  // The unlit sun glows brighter as ignition builds, though it gives no heat yet.
+  Scene.setAtmosphere(state.pressure, methaneHaze(), Math.max(sunBrightness(), SUN_IGNITED * state.ignition ** 3));
   Scene.setOpening(state.step === 0 ? state.ignition ** 0.8 : 1);
   Scene.setSunBackground(componentDone('sun'));
   Scene.setMoon(state.step >= 1, state.moonWake, componentDone('moon'));
@@ -1131,19 +1216,20 @@ function frame(now) {
     checkSteps();
     checkGameOver();
     updateScene(c);
-    if (currentTab !== 'world' && currentTab !== 'life') renderTab(currentTab);
+    renderCategory(false, true);
+    renderRail();
   }
 
   worldTimer += dt;
   if (worldTimer > 1) {
     worldTimer = 0;
-    if (currentTab === 'world') renderWorld();
+    if (currentCat === 'world') renderWorld();
   }
 
   lifeTimer += dt;
   if (lifeTimer > 0.5) {
     lifeTimer = 0;
-    if (currentTab === 'life') renderLife();
+    if (currentCat === 'biology' && SECTIONS.life.unlocked()) renderLife();
   }
 
   newsTimer += dt;
@@ -1163,11 +1249,12 @@ function frame(now) {
 
 load();
 Scene.init();
+buildPanels();
 recalc();
 applyOffline();
-renderTabs();
+renderRail();
 updateScene(tempC());
-openTab('sun', false);
+openCategory('astronomy', false);
 if (state.over) showGameOver();
 if (state.step > 0) randomNews();
 scheduleComet();
