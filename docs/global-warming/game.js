@@ -17,18 +17,21 @@ const MAX_O2 = 21;
 const LIFE_WINDOW = [11, 36];      // global mean °C range of complex life over the last 485 million years
 const SUN_GYR_S = 120;             // real seconds per billion years of the sun's life
 const SUN_IGNITED = 0.7;           // the young sun shone at about 70% of today's brightness
-// Spinning the planet (swipe it): fast enough and the core becomes a dynamo, faster still and it throws off the moon.
+// Spinning the planet (swipe it) is the first thing after the Big Bang. At half spin the planet throws off
+// the moon, whose tides then drag on the spin. At full spin the spin locks: days begin, the sun rises at 6 and
+// sets at 18, and the Magnetic Field can be researched.
 const SPIN_PER_SCREEN = 0.12;      // spin added by a swipe across the whole screen width
-const DYNAMO_SPIN = 0.4;           // spin where the magnetic field starts (about a 10-hour day)
-const MOON_SPIN = 0.95;            // spin where the planet throws off the moon (about a 4-hour day)
-const TIDAL_SPIN = 0.15;           // a 24-hour day: the moon's tides brake the planet toward it
-const dayHours = spin => 4 / (0.02 + 0.98 * spin);
+const MOON_SPIN = 0.5;
+const TIDE_DRAG = 0.06;            // extra spin lost per second to the moon's tides, before the spin locks
+const DAY_S = 30;                  // real seconds per day once the spin is locked
+const SUNRISE = 6, SUNSET = 18;
+const sunUp = () => state.spinLocked && state.clock % 24 >= SUNRISE && state.clock % 24 <= SUNSET;
 const THERMAL_LAG_S = 5;           // how fast temperature follows its target on an ice-covered planet
 const OCEAN_LAG_S = 60;            // extra lag once oceans are open: water takes long to heat
 
 // The early game unlocks the planet in a fixed order. See spec.md, "Unlock sequence".
 const STEPS = [
-  { name: 'Light the sun', goal: 'Tap the dark sun fast until it ignites. If you stop, its core cools down again.' },
+  { name: 'Light the sun', goal: 'Spin the planet until it keeps turning. Then tap the dark sun fast while it is up, before it sets.' },
   { name: 'Melt ice', goal: 'Reach 0°C.', tab: 'sun' },
   { name: 'Ocean', goal: 'Open 30% of the planet to water.', tab: 'ocean' },
   { name: 'Clouds', goal: 'Make storms.' },
@@ -44,9 +47,9 @@ const SECTIONS = {
   sun: { name: 'Sun', unlocked: () => true },
   moon: { name: 'Moon', unlocked: () => state.moonBorn },
   // Order: light the sun, spin the planet (magnetic field), then the air can stay.
-  atmosphere: { name: 'Atmosphere', unlocked: () => state.dynamo },
-  core: { name: 'Core', unlocked: () => state.dynamo },
-  land: { name: 'Land', unlocked: () => state.dynamo },
+  atmosphere: { name: 'Atmosphere', unlocked: () => has('magnet') },
+  core: { name: 'Core', unlocked: () => state.spinLocked },
+  land: { name: 'Land', unlocked: () => state.spinLocked },
   ocean: { name: 'Ocean', unlocked: () => state.step >= 2 },
   oceanlife: { name: 'Ocean life', unlocked: () => state.step >= 5 },
   landlife: { name: 'Land life', unlocked: () => state.step >= 7 },
@@ -90,7 +93,8 @@ const dnaGauge = domain => () => [logLevel(rates.dnaBy[domain], 1000), `${fmt(ra
 const NEEDS = {
   temp: { label: v => `${v}°C`, now: () => tempC(), show: v => fmtTemp(v) },
   sunAge: { label: v => `sun ${v} Gyr old`, now: () => state.sunAge, show: v => `${v.toFixed(1)} Gyr` },
-  day: { label: v => `${v} h day`, now: () => dayHours(state.spin), show: v => `${v.toFixed(1)} h` },
+  spin: { label: v => `${v}% spin`, now: () => state.spin * 100, show: v => `${v.toFixed(0)}%` },
+  days: { label: v => `${v} days`, now: () => Math.floor(state.clock / 24), show: v => `${v}` },
   air: { label: v => `${v} bar air`, now: () => state.pressure, show: v => `${v.toFixed(2)} bar` },
   water: { label: v => `${v}% open water`, now: () => openOcean() * 100, show: v => `${v.toFixed(0)}%` },
   clouds: { label: v => `${v}% clouds`, now: () => state.clouds * 100, show: v => `${v.toFixed(0)}%` },
@@ -125,6 +129,8 @@ const RESEARCH = [
     gauge: () => (state.step >= 5 ? [logLevel(state.strikes, 1000), `${fmt(state.strikes)} strikes`] : [state.soup / SOUP_FULL, `Soup ${pct(state.soup / SOUP_FULL)}`]) },
   { id: 'storms', icon: 'bolt', tab: 'atmosphere', step: 4, requires: ['lightning'], needs: [['strikes', 10]], name: 'Thunderstorms', lightning: 0.4, gauge: () => [clamp01(rates.lightning / 0.4), `${(rates.lightning * 60).toFixed(0)} strikes/min`] },
   { id: 'bigbolt', icon: 'bolt', tab: 'atmosphere', step: 4, requires: ['lightning'], needs: [['strikes', 25]], name: 'Bigger Bolts', boltMult: 2, gauge: soupGauge },
+  // Core: the spinning iron inside. A steady spin makes it a dynamo.
+  { id: 'magnet', icon: 'vent', tab: 'core', step: 0, needs: [['spin', 100]], name: 'Magnetic Field', gauge: () => [state.pressure, `${state.pressure.toFixed(2)} bar of air kept`] },
   // Land: the crust. Volcanoes build land, plates move it (water helps them slide), collisions pile up mountains.
   { id: 'volcano', icon: 'vent', tab: 'land', step: 1, name: 'Volcanoes', volcanoes: 5, gauge: volcanoGauge },
   { id: 'supervolcano', icon: 'vent', tab: 'land', step: 1, requires: ['volcano'], replaces: 'volcano', needs: [['eruptions', 5]], name: 'Supervolcanoes', volcanoes: 15, eruptionSize: 2.5, gauge: volcanoGauge },
@@ -136,7 +142,7 @@ const RESEARCH = [
   // Moon: its tides need open water; its pull slowly lengthens the day.
   { id: 'tides', icon: 'wave', tab: 'moon', step: 2, needs: [['water', 15]], name: 'Tides', iceShift: 2, gauge: () => [openOcean() / (1 - state.land), `${pct(openOcean())} open water`] },
   { id: 'pools', icon: 'wave', tab: 'moon', step: 2, requires: ['tides'], needs: [['water', 30], ['minerals', 50]], name: 'Tidal Pools', boltMult: 2, gauge: soupGauge },
-  { id: 'tilt', icon: 'wave', tab: 'moon', step: 2, requires: ['pools'], needs: [['day', 16]], name: 'Stable Tilt', tilt: true,
+  { id: 'tilt', icon: 'wave', tab: 'moon', step: 2, requires: ['pools'], needs: [['days', 30]], name: 'Stable Tilt', tilt: true,
     gauge: () => { const n = SPECIES.filter(sp => evolved(sp.id)).length; return [n / SPECIES.length, `${n} species alive`]; } },
   // Life
   { id: 'shallows', icon: 'wave', tab: 'oceanlife', step: 6, needs: [['species', 5]], name: 'Shallow Seas', dnaMult: { ocean: 2 }, gauge: dnaGauge('ocean') },
@@ -154,7 +160,7 @@ const WARP_MAX = 4.3;          // light speed
 const WARP_RATE = 0.1 / WARP_MAX;   // progress per second per unit of speed: about 8 s at light speed
 const ARRIVAL_S = 2;           // the last stretch, braking at the sun, takes the same time at any speed
 const SUN_BIRTH_YEARS = 9.2e9;
-const IGNITION_TAPS = 80;
+const IGNITION_TAPS = 50;
 const IGNITION_GRACE_S = 0.6;   // a pause this long between taps lets the core start cooling
 const IGNITION_DECAY = 0.08;    // ignition lost per second while not tapping
 
@@ -210,8 +216,9 @@ const freshState = () => ({
   aerosols: 0,          // 0..1, eruption sulfate high in the air
   ash: 0,               // ash from eruptions on the ice
   eruptions: 0,
-  spin: 0,          // 0..1, how fast the planet turns (see dayHours)
-  dynamo: false,    // the spinning core has made a magnetic field
+  spin: 0,          // 0..1, how fast the planet turns
+  spinLocked: false, // the planet has reached full spin and keeps it
+  clock: 3,         // hours since the spin locked; the hour of day is clock % 24
   moonBorn: false,  // the planet has thrown off its moon
   clouds: 0,
   minerals: 0,
@@ -252,6 +259,12 @@ function load() {
       const saved = JSON.parse(raw);
       // Saves from before the Big Bang opening skip it.
       state = { ...freshState(), banged: true, ...saved };
+      // Saves from when the spin made the magnetic field directly: keep the field, lock the spin.
+      if (saved.dynamo && !saved.spinLocked) {
+        state.spinLocked = true;
+        state.spin = 1;
+        state.upgrades = [...new Set([...(state.upgrades || []), 'magnet'])];
+      }
     }
   } catch (e) {
     console.warn('Save load failed', e);
@@ -397,10 +410,10 @@ function simulate(dt) {
     state.ignition = Math.max(0, state.ignition - IGNITION_DECAY * Math.min(dt, state.sinceTap - IGNITION_GRACE_S));
   }
 
-  // The spin runs down when the player stops swiping, faster the faster it turns. A running dynamo keeps
-  // the core turning; once the moon exists, its tides slowly brake the planet toward a 24-hour day.
-  if (state.moonBorn) state.spin += (TIDAL_SPIN - state.spin) * Math.min(1, 0.02 * dt);
-  else state.spin = Math.max(state.dynamo ? DYNAMO_SPIN : 0, state.spin - (0.04 + 0.12 * state.spin) * dt);
+  // The spin runs down when the player stops swiping, faster the faster it turns, and faster still once the
+  // moon's tides pull on it. Full spin locks it, and the clock starts.
+  if (state.spinLocked) state.clock += 24 * dt / DAY_S;
+  else state.spin = Math.max(0, state.spin - (0.04 + 0.12 * state.spin + (state.moonBorn ? TIDE_DRAG : 0)) * dt);
 
   // Volcanoes slowly build new land; colliding plates pile it up into mountains.
   state.land = Math.min(MAX_LAND, state.land + 0.00004 * volcanoes() * (1 - state.land / MAX_LAND) * dt);
@@ -414,7 +427,7 @@ function simulate(dt) {
   // Thawed gases turn into air (the player chose which ones in the Atmosphere panel).
   if (has('thawN2')) state.pressure = Math.min(1, state.pressure + 0.08 * dt);
   // Without a magnetic field the solar wind slowly strips the air away, as it did on Mars.
-  if (state.step >= 3 && !state.dynamo) state.pressure = Math.max(0.2, state.pressure - 0.0003 * dt);
+  if (state.step >= 3 && !has('magnet')) state.pressure = Math.max(0.2, state.pressure - 0.0003 * dt);
   if (has('thawCH4') && state.ch4Ice > 0) {
     const out = Math.min(state.ch4Ice, 2 * dt);
     state.ch4Ice -= out;
@@ -613,7 +626,7 @@ function headHtml(tab) {
       ${state.step >= 6 ? meterHtml('Ozone layer', 'm-ozone') : ''}
       <p class="note m-air"></p>`;
   }
-  if (tab === 'core') return `${meterHtml('Day', 'm-day')}<p class="note m-core"></p>`;
+  if (tab === 'core') return `${meterHtml('Spin', 'm-day')}<p class="note m-core"></p>`;
   if (tab === 'land') {
     return `${state.eruptions ? meterHtml('Aerosols', 'm-aerosol') : ''}
       ${has('volcano') ? `<div class="meter-row"><span>Volcanic activity</span><b class="m-volc-v"></b></div>
@@ -632,7 +645,7 @@ function renderTab(tab, force = false) {
   const root = $(`#${tab}`);
   if (!root || tab === 'world' || tab === 'life') return;
   const entries = tabEntries(tab);
-  const key = `${state.step}|${has('volcano')}|${state.eruptions > 0}|${state.dynamo}|${entries.map(e => e.kind + e.item.id + pop(e.item.id)).join()}`.replace(/0\.\d+/g, 'a');
+  const key = `${state.step}|${has('volcano')}|${state.eruptions > 0}|${state.spinLocked}|${entries.map(e => e.kind + e.item.id + pop(e.item.id)).join()}`.replace(/0\.\d+/g, 'a');
   if (force || tabKeys[tab] !== key) {
     tabKeys[tab] = key;
     root.innerHTML = `<div class="domain-head">${headHtml(tab)}</div><ul class="list"></ul>`;
@@ -679,8 +692,9 @@ function updateTab(tab, root) {
   if (tab === 'sun') {
     setMeter(root, 'm-ignite', state.ignition);
     setMeter(root, 'm-sun', sunBrightness(), `${pct(sunBrightness())} of today`);
-    note('m-fusion', state.ignition < 1
-      ? 'Each tap fuses hydrogen into helium and squeezes the core hotter. Stop tapping and it cools.'
+    note('m-fusion', !state.spinLocked ? 'Swipe the planet to spin it.'
+      : state.ignition < 1 && !sunUp() ? 'The sun has set. It rises at 06:00.'
+      : state.ignition < 1 ? 'Each tap fuses hydrogen into helium and squeezes the core hotter. Stop tapping and it cools.'
       : componentDone('sun') ? 'The sun is complete and rests in the background.' : '');
   }
   if (tab === 'moon') {
@@ -694,8 +708,8 @@ function updateTab(tab, root) {
     note('m-air', `Air ${state.pressure.toFixed(2)} bar · ${levels.map(l => l + ' · ').join('')}greenhouse +${rates.climate.greenhouse.toFixed(0)}°C${frozen.length ? ` · still frozen: ${frozen.join(', ')}` : ''}`);
   }
   if (tab === 'core') {
-    setMeter(root, 'm-day', state.spin, `${dayHours(state.spin).toFixed(1)} h`);
-    note('m-core', 'Magnetic field: on');
+    setMeter(root, 'm-day', state.spin, state.spinLocked ? 'Locked' : pct(state.spin));
+    note('m-core', '');
   }
   if (tab === 'land') {
     const cool = aerosolCooling();
@@ -956,8 +970,8 @@ function renderWorld() {
     ['Ozone layer', pct(ozone())],
     ['Species alive', `${SPECIES.filter(s => evolved(s.id)).length} / ${SPECIES.length}`],
     ['Species extinct', `${state.extinct.length}`],
-    ['Day length', `${dayHours(state.spin).toFixed(1)} h`],
-    ['Magnetic field', state.dynamo ? 'On' : 'None'],
+    ['Day', state.spinLocked ? `${Math.floor(state.clock / 24)} · ${clockText()}` : '–'],
+    ['Magnetic field', has('magnet') ? 'On' : 'None'],
     ['Sun taps', fmt(state.clicks)],
     ['Lightning strikes', fmt(state.strikes)],
     ['Comets caught', fmt(state.comets)],
@@ -998,9 +1012,11 @@ function tempColor(c) {
 }
 
 function tempCaption(c) {
-  if (state.step === 0) return `${state.tempK.toFixed(0)} K · ${state.ignition < 0.05 ? 'Dark planet' : `Sun ignition ${pct(state.ignition)}`}`;
-  // While the player spins the planet, the caption shows how long a day is.
-  if (!state.moonBorn && state.spin > 0.02) return `Day ${dayHours(state.spin).toFixed(1)} h · ${STEPS[state.step].name}`;
+  if (!state.spinLocked) return state.spin > 0.02 ? `Spin ${pct(state.spin)}` : 'The planet barely turns';
+  if (state.step === 0) {
+    if (!sunUp()) return `${state.tempK.toFixed(0)} K · Night`;
+    return `${state.tempK.toFixed(0)} K · ${state.ignition < 0.05 ? 'A dark sun is up' : `Sun ignition ${pct(state.ignition)}`}`;
+  }
   if (state.step >= 5) {
     if (c < LIFE_WINDOW[0]) return `Too cold for complex life (${LIFE_WINDOW[0]}–${LIFE_WINDOW[1]}°C)`;
     if (c > LIFE_WINDOW[1]) return `Too hot for complex life (${LIFE_WINDOW[0]}–${LIFE_WINDOW[1]}°C)`;
@@ -1054,18 +1070,18 @@ Scene.onMoonTap(() => {
   buzz(6);
 });
 
-// Swiping the planet spins it, the way tapping lights the sun. Fast enough, the molten iron core becomes a
-// dynamo (magnetic field). Faster still, the planet throws off a blob of molten rock: the moon.
+// Swiping the planet spins it. At half spin the planet throws off a blob of molten rock: the moon.
+// At full spin the spin locks for good and days begin.
 Scene.onSpin(amount => {
-  if (state.step < 1 || state.over) return;
+  if (state.spinLocked || state.over) return;
   state.spin = Math.min(1, state.spin + amount * SPIN_PER_SCREEN);
-  if (!state.dynamo && state.spin >= DYNAMO_SPIN) {
-    state.dynamo = true;
-    floatText(innerWidth / 2, innerHeight / 2, 'Magnetic field!');
+  if (state.spin >= 1) {
+    state.spinLocked = true;
+    floatText(innerWidth / 2, innerHeight / 2, 'Spin locked!');
     buzz([30, 50, 30]);
     renderRail();
   }
-  if (state.dynamo && !state.moonBorn && state.spin >= MOON_SPIN) {
+  if (!state.moonBorn && state.spin >= MOON_SPIN) {
     state.moonBorn = true;
     Scene.flingMoon();
     buzz([40, 60, 40, 60]);
@@ -1106,7 +1122,7 @@ Scene.onCloudTap((kind, zone, x, y) => {
 // Tapping the planet opens the component under your finger. Before the ocean and land open,
 // the frozen surface and bare rock lead to the Core (volcanoes).
 Scene.onZoneTap((zone, x, y) => {
-  if (zone !== 'atmosphere' && state.step >= 1 && !state.dynamo) {
+  if (zone !== 'atmosphere' && !state.spinLocked) {
     hint(CATEGORY_BY_ID.geology.hint, x, y);
     return;
   }
@@ -1207,6 +1223,12 @@ window.addEventListener('storage', e => {
 // Years since the Big Bang during the flight: slow at first, then racing, reaching the sun's birth on arrival.
 const movieYears = () => SUN_BIRTH_YEARS * clamp01(movieP / 0.8) ** 3;
 
+// The hour of the day as a 24-hour clock, e.g. 07:30.
+function clockText() {
+  const h = state.clock % 24;
+  return `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+}
+
 function fmtYears(y) {
   if (y < 1e3) return `${Math.floor(y)} years`;
   if (y < 1e6) return `${Math.floor(y / 1e3)} thousand years`;
@@ -1224,6 +1246,7 @@ function renderHud(c) {
   el.temp.textContent = fmtTemp(c);
   el.tempSub.textContent = tempCaption(c);
   const parts = [];
+  if (state.spinLocked) parts.push(`<span>Day <b>${Math.floor(state.clock / 24)}</b> ${clockText()}</span>`);
   if (state.ignition >= 1) parts.push(`<span>Sun <b>${state.sunAge.toFixed(1)}</b> Gyr</span>`);
   if (state.step >= 1) parts.push(`<span><b>${fmt(state.co2)}</b> ppm CO₂</span>`);
   if (state.step >= 5) parts.push(`<span><b>${fmt(state.dna)}</b> DNA <small>+${fmt(rates.dna)}/s</small></span>`);
@@ -1238,7 +1261,7 @@ function updateScene(c) {
   Scene.setIce(iceCover());
   // The unlit sun glows brighter as ignition builds, though it gives no heat yet.
   Scene.setAtmosphere(state.pressure, methaneHaze(), Math.max(sunBrightness(), SUN_IGNITED * state.ignition ** 3));
-  Scene.setOpening(state.step === 0 ? state.ignition ** 0.8 : 1);
+  Scene.setOpening(1);
   Scene.setSunBackground(componentDone('sun'));
   Scene.setMoon(state.moonBorn, 1, componentDone('moon'));
   Scene.setSpin(state.spin);
@@ -1265,6 +1288,7 @@ function frame(now) {
   state.lastTick = Date.now();
   Scene.setCinema(!state.banged ? 'pre' : movieP !== null ? 'warp' : null, !state.banged ? state.bang : movieP, warpSpeed);
   document.body.classList.toggle('cinema', inCinema());
+  Scene.setDay(state.spinLocked, state.clock % 24);
 
   const c = tempC();
   renderHud(c);

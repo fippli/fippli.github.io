@@ -60,6 +60,8 @@ const Scene = (() => {
   let particles = [], bolts = [], smokeRate = 0, smokeTimer = 0;
   let sunPress = 0, comet = null, spinLevel = 0, drag = null;
   // Opening movie: 'pre' = the singularity waits for taps, 'warp' = the flight through space after the bang.
+  // Day and night: once the planet spins steadily, the sun rises at 6 and sets at 18 o'clock.
+  let dayShown = false, dayHour = 12;
   let cinema = null, bangHeat = 0, warpT = 0, warpV = 0, warpFlash = 0, warpStars = [], onBangFn = () => {};
   let onSun = () => {}, onZone = () => {}, onCloud = () => {}, onComet = () => {}, onMoon = () => {}, onSpinFn = () => {};
 
@@ -380,7 +382,16 @@ const Scene = (() => {
     return c;
   }
 
+  const sunVisible = () => dayShown && dayHour >= 6 && dayHour <= 18;
+  // 1 in full daylight, 0 at night, with an hour of dawn and dusk on each side.
+  const daylight = () => (dayShown ? clamp01((Math.min(dayHour - 5, 19 - dayHour)) / 2) : 1);
+
   function sunTarget() {
+    if (dayShown) {
+      // The sun's path across the sky: up on the left at 6, highest at noon, down on the right at 18.
+      const r = sunBg ? layout.rb : layout.rn, t = clamp01((dayHour - 6) / 12);
+      return { x: lerp(layout.colLeft + r + 12, layout.colRight - r - 12, t), y: H / 2 + r * 0.6 - Math.sin(Math.PI * t) * H * 0.3, r };
+    }
     const e = smooth(clamp01(zoom));
     const n = sunBg
       ? { x: layout.colRight - layout.rb - 10, y: H * 0.21, r: layout.rb }
@@ -404,7 +415,7 @@ const Scene = (() => {
     const km = moon.fling > 0 ? Math.min(1, dt * 1.2) : k;
     moon.fling = Math.max(0, moon.fling - dt);
     for (const key of ['x', 'y', 'r']) {
-      sunF[key] += (t[key] - sunF[key]) * k;
+      sunF[key] += (t[key] - sunF[key]) * (dayShown ? 1 : k);
       moon.cur[key] += (m[key] - moon.cur[key]) * km;
     }
     sun = { x: Math.round(sunF.x), y: Math.round(sunF.y), r: Math.max(2, Math.round(sunF.r)) };
@@ -650,7 +661,7 @@ const Scene = (() => {
     };
   }
 
-  function drawWarp(dt) {
+  function drawWarp(now, dt) {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
     // The flight brakes on arrival, when the sun comes up ahead.
@@ -679,11 +690,15 @@ const Scene = (() => {
       ctx.fillRect(0, 0, W, H);
       ctx.globalAlpha = 1;
     }
-    // Ahead, a dark star swells until it is the sun of the opening shot.
+    // On arrival the dark, frozen planet fades in.
     if (warpT > 0.8) {
-      const k = smooth(clamp01((warpT - 0.8) / 0.2)), body = sunSprite();
-      const w = Math.max(1, Math.round(body.width * k));
-      ctx.drawImage(body, Math.round(lerp(ox, sun.x, k) - w / 2), Math.round(lerp(oy, sun.y, k) - w / 2), w, w);
+      if (now - lastBg > 120) {
+        renderBackground();
+        lastBg = now;
+      }
+      ctx.globalAlpha = smooth(clamp01((warpT - 0.8) / 0.2));
+      ctx.drawImage(bg, 0, camY);
+      ctx.globalAlpha = 1;
     }
   }
 
@@ -692,7 +707,7 @@ const Scene = (() => {
     if (cinema) {
       updateBodies(dt);
       if (cinema === 'pre') drawSingularity(now);
-      else drawWarp(dt);
+      else drawWarp(now, dt);
       drawParticles(dt);
       return;
     }
@@ -707,9 +722,23 @@ const Scene = (() => {
     // During the opening the planet sits lower; fill the sky above it with the top of the background.
     ctx.drawImage(bg, 0, camY);
     if (camY > 0) ctx.drawImage(bg, 0, 0, W, camY, 0, 0, W, camY);
+    const night = 1 - daylight();
+    if (night > 0) {
+      ctx.fillStyle = `rgba(2, 4, 16, ${(0.55 * night).toFixed(2)})`;
+      ctx.fillRect(0, 0, W, H);
+    }
     drawMoon();
     drawClouds(now, dt);
-    drawSun(now, dt);   // in front of clouds, so it always stays visible and tappable
+    if (sunVisible()) {
+      // In front of clouds so it stays tappable, but behind the planet when it rises and sets.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H);
+      ctx.arc(cx, cy + camY, R, 0, Math.PI * 2);
+      ctx.clip('evenodd');
+      drawSun(now, dt);
+      ctx.restore();
+    }
     drawBolts(dt);
     drawSprites(now, dt);
     drawComet(dt);
@@ -733,7 +762,7 @@ const Scene = (() => {
       onComet(e.clientX, e.clientY);
       return;
     }
-    if (Math.hypot(x - sun.x, y - sun.y) <= sun.r + 10) {
+    if (sunVisible() && Math.hypot(x - sun.x, y - sun.y) <= sun.r + 10) {
       e.preventDefault();
       sunPress = 1;
       onSun(e.clientX, e.clientY);
@@ -967,6 +996,11 @@ const Scene = (() => {
       for (let k = 0; k < 30 * size; k++) {
         particles.push({ x: x + (Math.random() - 0.5) * 4, y, vx: (Math.random() - 0.3) * 8, vy: -(10 + Math.random() * 25 * size), life: 2.5, max: 2.5, size: Math.random() < 0.5 ? 1 : 2, color: Math.random() < 0.5 ? '#8a8478' : '#5a5650' });
       }
+    },
+    // Day and night: shown once the planet spins steadily, and the hour of the day (0..24).
+    setDay(shown, hour) {
+      dayShown = shown;
+      dayHour = hour;
     },
     // How fast the planet turns (0..1).
     setSpin(level) {
