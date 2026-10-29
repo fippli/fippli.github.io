@@ -107,8 +107,11 @@ const NEEDS = {
   minerals: { label: v => `${v} minerals`, now: () => state.minerals, show: v => fmt(v) },
   species: { label: v => `${v} species alive`, now: () => SPECIES.filter(sp => evolved(sp.id)).length, show: v => `${v}` },
   plants: { label: v => `${v} land plants`, now: () => SPECIES.filter(sp => sp.green && evolved(sp.id)).length, show: v => `${v}` },
+  comets: { label: v => `${v} ${v === 1 ? 'comet' : 'comets'} caught`, now: () => state.comets, show: v => `${v}` },
+  // A link to another branch of the tree: that research must be done first.
+  done: { label: id => RESEARCH_BY_ID[id].name, met: id => has(id) },
 };
-const needMet = ([kind, v]) => NEEDS[kind].now() >= v;
+const needMet = ([kind, v]) => (NEEDS[kind].met ? NEEDS[kind].met(v) : NEEDS[kind].now() >= v);
 
 // The research tree. Each node shows only its name and what it needs until researched, then a gauge.
 // A node appears once everything in `requires` is researched and the step is reached. It can be researched
@@ -120,28 +123,28 @@ const RESEARCH = [
   { id: 'sun2', icon: 'sunicon', tab: 'sun', step: 1, requires: ['sun1'], replaces: 'sun1', needs: [['sunAge', 1.5]], days: 1, name: 'Brighter Sun', sun: 0.86, gauge: sunGauge },
   { id: 'sun3', icon: 'sunicon', tab: 'sun', step: 1, requires: ['sun2'], replaces: 'sun2', needs: [['sunAge', 3]], days: 1, name: 'Main Sequence', sun: 0.93, gauge: sunGauge },
   { id: 'sun4', icon: 'sunicon', tab: 'sun', step: 1, requires: ['sun3'], replaces: 'sun3', needs: [['sunAge', 4.5]], days: 1, name: 'Mature Sun', sun: 1, gauge: sunGauge },
-  { id: 'uv', icon: 'sunicon', tab: 'sun', step: 5, needs: [['species', 3]], days: 1, name: 'Ultraviolet', dnaMult: { all: 1.25 }, gauge: () => [logLevel(rates.dna, 1000), `${fmt(rates.dna)} DNA/s`] },
+  { id: 'uv', icon: 'sunicon', tab: 'sun', step: 5, needs: [['species', 3], ['done', 'sun2']], days: 1, name: 'Ultraviolet', dnaMult: { all: 1.25 }, gauge: () => [logLevel(rates.dna, 1000), `${fmt(rates.dna)} DNA/s`] },
   // Atmosphere: each frozen gas can thaw at its real melting or boiling point.
   { id: 'thawN2', icon: 'cloud', tab: 'atmosphere', step: 0, needs: [['temp', -210]], days: 0.5, name: 'Nitrogen', thaw: 'n2', gauge: () => [state.pressure, `${state.pressure.toFixed(2)} bar`] },
   { id: 'thawCH4', icon: 'cloud', tab: 'atmosphere', step: 0, needs: [['temp', -161]], days: 0.5, name: 'Methane', thaw: 'ch4', gauge: () => [logLevel(state.ch4, 30), `${state.ch4.toFixed(1)} ppm · +${gasWarming('ch4').toFixed(0)}°C`] },
   { id: 'thawCO2', icon: 'cloud', tab: 'atmosphere', step: 0, needs: [['temp', -78]], days: 1, name: 'Carbon Dioxide', thaw: 'co2', gauge: () => [logLevel(state.co2, 1e5), `${fmt(state.co2)} ppm · +${gasWarming('co2').toFixed(0)}°C`] },
   // Noble gases: they react with nothing, so they do nothing to the climate. Each can exist as gas above its
-  // boiling point. Helium leaks to space as fast as rocks make it, argon builds up from potassium decay in
-  // volcanic gas, radon decays within days; neon, krypton and xenon just stay.
-  { id: 'helium', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -269]], days: 0.5, name: 'Helium', gauge: () => [clamp01(state.he / 6), `${state.he.toFixed(2)} ppm`] },
-  { id: 'neon', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -246]], days: 0.5, name: 'Neon', gauge: () => [0.5, '18 ppm'] },
-  { id: 'argon', icon: 'cloud', tab: 'noble', step: 1, requires: ['volcano'], needs: [['temp', -186]], days: 0.5, name: 'Argon', gauge: () => [state.ar / 9340, `${fmt(state.ar)} ppm`] },
-  { id: 'krypton', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -153]], days: 0.5, name: 'Krypton', gauge: () => [0.3, '1.1 ppm'] },
-  { id: 'xenon', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -108]], days: 0.5, name: 'Xenon', gauge: () => [0.1, '0.09 ppm'] },
-  { id: 'radon', icon: 'cloud', tab: 'noble', step: 1, requires: ['volcano'], needs: [['temp', -62]], days: 0.5, name: 'Radon', gauge: () => [clamp01(state.rn / 6000), `${fmt(state.rn)} atoms/L`] },
-  { id: 'clouds', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['thawN2'], needs: [['water', 10], ['air', 0.5]], days: 1, name: 'Clouds', gauge: () => [state.clouds, `${pct(state.clouds)} cover`] },
+  // boiling point. Helium (uranium decay) and argon (potassium decay) come out with volcanic gas; radon seeps
+  // from moving crust and decays within days; neon, krypton and xenon arrive with comets and just stay.
+  { id: 'helium', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -269], ['done', 'volcano']], days: 0.5, name: 'Helium', gauge: () => [clamp01(state.he / 6), `${state.he.toFixed(2)} ppm`] },
+  { id: 'neon', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -246], ['comets', 1]], days: 0.5, name: 'Neon', gauge: () => [0.5, '18 ppm'] },
+  { id: 'argon', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -186], ['done', 'volcano']], days: 0.5, name: 'Argon', gauge: () => [state.ar / 9340, `${fmt(state.ar)} ppm`] },
+  { id: 'krypton', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -153], ['comets', 2]], days: 0.5, name: 'Krypton', gauge: () => [0.3, '1.1 ppm'] },
+  { id: 'xenon', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -108], ['comets', 3]], days: 0.5, name: 'Xenon', gauge: () => [0.1, '0.09 ppm'] },
+  { id: 'radon', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -62], ['done', 'plates']], days: 0.5, name: 'Radon', gauge: () => [clamp01(state.rn / 6000), `${fmt(state.rn)} atoms/L`] },
+  { id: 'clouds', icon: 'cloud', tab: 'atmosphere', step: 2, needs: [['water', 10], ['air', 0.5], ['done', 'thawN2']], days: 1, name: 'Clouds', gauge: () => [state.clouds, `${pct(state.clouds)} cover`] },
   { id: 'evap', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['clouds'], needs: [['temp', 10]], days: 1, name: 'Evaporation', cloudMult: 1.5, gauge: () => [clamp01(rates.clouds / 0.05), `+${(rates.clouds * 100).toFixed(1)}% cover/s`] },
   { id: 'rain', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['clouds'], needs: [['clouds', 10]], days: 0.5, name: 'Rain', gauge: rainGauge },
   { id: 'downpour', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['rain'], replaces: 'rain', needs: [['clouds', 25]], days: 1, name: 'Downpour', rainMult: 3, gauge: rainGauge },
-  { id: 'lightning', icon: 'bolt', tab: 'atmosphere', step: 2, requires: ['clouds'], needs: [['clouds', 20]], days: 1, name: 'Lightning',
+  { id: 'lightning', icon: 'bolt', tab: 'atmosphere', step: 2, requires: ['clouds'], needs: [['clouds', 20], ['done', 'evap']], days: 1, name: 'Lightning',
     gauge: () => (state.step >= 5 ? [logLevel(state.strikes, 1000), `${fmt(state.strikes)} strikes`] : [state.soup / SOUP_FULL, `Soup ${pct(state.soup / SOUP_FULL)}`]) },
   { id: 'storms', icon: 'bolt', tab: 'atmosphere', step: 4, requires: ['lightning'], needs: [['strikes', 10]], days: 1, name: 'Thunderstorms', lightning: 0.4, gauge: () => [clamp01(rates.lightning / 0.4), `${(rates.lightning * 60).toFixed(0)} strikes/min`] },
-  { id: 'bigbolt', icon: 'bolt', tab: 'atmosphere', step: 4, requires: ['lightning'], needs: [['strikes', 25]], days: 1, name: 'Bigger Bolts', boltMult: 2, gauge: soupGauge },
+  { id: 'bigbolt', icon: 'bolt', tab: 'atmosphere', step: 4, requires: ['storms'], needs: [['strikes', 25]], days: 1, name: 'Bigger Bolts', boltMult: 2, gauge: soupGauge },
   // Core: the spinning iron inside. A steady spin makes it a dynamo.
   { id: 'magnet', icon: 'vent', tab: 'core', step: 0, needs: [['spin', 100]], days: 1, name: 'Magnetic Field', gauge: () => [state.pressure, `${state.pressure.toFixed(2)} bar of air kept`] },
   // Land: the crust. Volcanoes build land, plates move it (water helps them slide), collisions pile up mountains.
@@ -150,16 +153,16 @@ const RESEARCH = [
   { id: 'plates', icon: 'mountain', tab: 'land', step: 1, requires: ['volcano'], needs: [['water', 5]], days: 2, name: 'Plate Tectonics', weatherMult: 1.5, gauge: () => [logLevel(rates.weathering, 100), `−${fmt(rates.weathering)} ppm CO₂/s`] },
   { id: 'collision', icon: 'mountain', tab: 'land', step: 2, requires: ['plates'], needs: [['land', 35]], days: 3, name: 'Collision', gauge: () => [state.mountains, `${pct(state.mountains)} mountains`] },
   // Ocean
-  { id: 'currents', icon: 'wave', tab: 'ocean', step: 2, needs: [['water', 20]], days: 1, name: 'Ocean Currents', iceShift: 4, gauge: () => [1 - state.ice, `${pct(state.ice)} ice`] },
-  { id: 'vents', icon: 'vent', tab: 'ocean', step: 2, requires: ['plates'], needs: [['water', 10]], days: 1, name: 'Hydrothermal Vents', minerals: 1, ch4: 0.025, gauge: () => [logLevel(state.minerals, 1e4), `${fmt(state.minerals)} minerals`] },
+  { id: 'currents', icon: 'wave', tab: 'ocean', step: 2, needs: [['water', 20], ['done', 'thawN2']], days: 1, name: 'Ocean Currents', iceShift: 4, gauge: () => [1 - state.ice, `${pct(state.ice)} ice`] },
+  { id: 'vents', icon: 'vent', tab: 'ocean', step: 2, needs: [['water', 10], ['done', 'plates']], days: 1, name: 'Hydrothermal Vents', minerals: 1, ch4: 0.025, gauge: () => [logLevel(state.minerals, 1e4), `${fmt(state.minerals)} minerals`] },
   // Moon: its tides need open water; its pull slowly lengthens the day.
   { id: 'tides', icon: 'wave', tab: 'moon', step: 2, needs: [['water', 15]], days: 1, name: 'Tides', iceShift: 2, gauge: () => [openOcean() / (1 - state.land), `${pct(openOcean())} open water`] },
   { id: 'pools', icon: 'wave', tab: 'moon', step: 2, requires: ['tides'], needs: [['water', 30], ['minerals', 50]], days: 1, name: 'Tidal Pools', boltMult: 2, gauge: soupGauge },
-  { id: 'tilt', icon: 'wave', tab: 'moon', step: 2, requires: ['pools'], needs: [['days', 30]], days: 2, name: 'Stable Tilt', tilt: true,
+  { id: 'tilt', icon: 'wave', tab: 'moon', step: 2, requires: ['tides'], needs: [['days', 30]], days: 2, name: 'Stable Tilt', tilt: true,
     gauge: () => { const n = SPECIES.filter(sp => evolved(sp.id)).length; return [n / SPECIES.length, `${n} species alive`]; } },
   // Life
-  { id: 'shallows', icon: 'wave', tab: 'oceanlife', step: 6, needs: [['species', 5]], days: 2, name: 'Shallow Seas', dnaMult: { ocean: 2 }, gauge: dnaGauge('ocean') },
-  { id: 'soil', icon: 'plant', tab: 'landlife', step: 7, needs: [['plants', 1]], days: 2, name: 'Soil', dnaMult: { ground: 2 }, gauge: dnaGauge('ground') },
+  { id: 'shallows', icon: 'wave', tab: 'oceanlife', step: 6, needs: [['species', 5], ['done', 'collision']], days: 2, name: 'Shallow Seas', dnaMult: { ocean: 2 }, gauge: dnaGauge('ocean') },
+  { id: 'soil', icon: 'plant', tab: 'landlife', step: 7, needs: [['plants', 1], ['done', 'rain']], days: 2, name: 'Soil', dnaMult: { ground: 2 }, gauge: dnaGauge('ground') },
 ];
 const RESEARCH_BY_ID = Object.fromEntries(RESEARCH.map(r => [r.id, r]));
 // The opening: tap the singularity until it bangs, then fly through 9.2 billion years of space
@@ -771,7 +774,8 @@ function updateTab(tab, root) {
         // What it needs: met conditions get a tick, unmet ones show where the planet is now.
         q('.meta').textContent = (item.needs || []).map(n => {
           const k = NEEDS[n[0]];
-          return needMet(n) ? `✓ ${k.label(n[1])}` : `${k.label(n[1])} (now ${k.show(k.now())})`;
+          if (needMet(n)) return `✓ ${k.label(n[1])}`;
+        return k.now ? `${k.label(n[1])} (now ${k.show(k.now())})` : k.label(n[1]);
         }).join(' · ');
         q('.cost').textContent = `${days} ${days === 1 ? 'day' : 'days'}`;
       }
