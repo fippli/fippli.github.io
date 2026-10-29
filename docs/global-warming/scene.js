@@ -10,6 +10,7 @@ const Scene = (() => {
   const LIGHT = norm([0.4, 0.85, 0.4]);     // the sun is above and to the right of the planet
   const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => v / 16 - 0.5);
   const SKY_BANDS = 8;
+  const AIR_TAP_PX = 24;                     // minimum height of the tappable air above the planet
   const SPIN_SECONDS = 150;
   const MAX_CLOUDS = 8;
   const SMOKY = new Set(['campfire', 'oil', 'suv', 'coal', 'factory', 'rig', 'cargo', 'permafrost']);
@@ -164,7 +165,9 @@ const Scene = (() => {
     if (ix < 0 || ix >= W || y < 0 || y >= H) return null;
     if (iy < 0) return 'space';
     const i = iy * W + ix;
-    if (pixU[i] < 0) return pixAlt[i] > atmosphere * 1.05 ? 'space' : 'atmosphere';
+    // The band just above the planet counts as air even when the air is still too thin to see,
+    // so the atmosphere can be reached before any gas has thawed.
+    if (pixU[i] < 0) return pixAlt[i] > Math.max(atmosphere * 1.05, AIR_TAP_PX) ? 'space' : 'atmosphere';
     const u = ((pixU[i] * TEX_W + spin * TEX_W) | 0) % TEX_W;
     return elev[pixV[i] * TEX_W + u] < currentSea ? 'ocean' : 'ground';
   }
