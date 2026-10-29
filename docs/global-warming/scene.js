@@ -389,8 +389,7 @@ const Scene = (() => {
   function sunTarget() {
     if (dayShown) {
       // The sun's path across the sky: up on the left at 6, highest at noon, down on the right at 18.
-      const r = sunBg ? layout.rb : layout.rn, t = clamp01((dayHour - 6) / 12);
-      return { x: lerp(layout.colLeft + r + 12, layout.colRight - r - 12, t), y: H / 2 + r * 0.6 - Math.sin(Math.PI * t) * H * 0.3, r };
+      return skyPath(dayHour, sunBg ? layout.rb : layout.rn);
     }
     const e = smooth(clamp01(zoom));
     const n = sunBg
@@ -400,7 +399,17 @@ const Scene = (() => {
     return { x: lerp(big.x, n.x, e), y: lerp(big.y, n.y, e), r: lerp(big.r, n.r, e) };
   }
 
+  // Once days run, the moon has the night sky: it rises at 18 and sets at 6, on the sun's path.
+  const moonUp = () => !dayShown || dayHour >= 18 || dayHour <= 6;
+
+  // Where a body sits on the day path at hour h (6 = rising on the left, 18 = setting on the right).
+  function skyPath(h, r) {
+    const t = clamp01((h - 6) / 12);
+    return { x: lerp(layout.colLeft + r + 12, layout.colRight - r - 12, t), y: H / 2 + r * 0.6 - Math.sin(Math.PI * t) * H * 0.3, r };
+  }
+
   function moonTarget() {
+    if (dayShown) return skyPath((dayHour + 12) % 24, moon.bg ? layout.rmb : layout.rm);
     return moon.bg
       ? { x: layout.colLeft + layout.rmb + 12, y: H * 0.2, r: layout.rmb }
       : { x: layout.colLeft + layout.rm + 16, y: H * 0.24, r: layout.rm };
@@ -412,7 +421,7 @@ const Scene = (() => {
     camY = Math.round(lerp(H * 0.62, 0, smooth(clamp01(zoom))));
     const k = Math.min(1, dt * 4), t = sunTarget(), m = moonTarget();
     // A moon just thrown off the planet drifts slowly up to its place in the sky.
-    const km = moon.fling > 0 ? Math.min(1, dt * 1.2) : k;
+    const km = moon.fling > 0 ? Math.min(1, dt * 1.2) : dayShown ? 1 : k;
     moon.fling = Math.max(0, moon.fling - dt);
     for (const key of ['x', 'y', 'r']) {
       sunF[key] += (t[key] - sunF[key]) * (dayShown ? 1 : k);
@@ -727,10 +736,17 @@ const Scene = (() => {
       ctx.fillStyle = `rgba(2, 4, 16, ${(0.55 * night).toFixed(2)})`;
       ctx.fillRect(0, 0, W, H);
     }
-    drawMoon();
+    // Sun and moon rise and set behind the planet: clip them to the sky.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    ctx.arc(cx, cy + camY, R, 0, Math.PI * 2);
+    ctx.clip('evenodd');
+    if (moonUp() || moon.fling > 0) drawMoon();
+    ctx.restore();
     drawClouds(now, dt);
     if (sunVisible()) {
-      // In front of clouds so it stays tappable, but behind the planet when it rises and sets.
+      // In front of clouds so it stays tappable.
       ctx.save();
       ctx.beginPath();
       ctx.rect(0, 0, W, H);
@@ -768,7 +784,7 @@ const Scene = (() => {
       onSun(e.clientX, e.clientY);
       return;
     }
-    if (moon.visible && Math.hypot(x - moon.cur.x, y - moon.cur.y) <= moon.cur.r + 8) {
+    if (moon.visible && moonUp() && Math.hypot(x - moon.cur.x, y - moon.cur.y) <= moon.cur.r + 8) {
       e.preventDefault();
       for (let k = 0; k < 6; k++) {
         const a = Math.random() * Math.PI * 2;
