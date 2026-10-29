@@ -31,6 +31,7 @@ const Scene = (() => {
   const BLOOM = hex('#1f7a5a');
   const OZONE = hex('#b49cff');
   const HAZE = hex('#d88a3a');
+  const ASH = hex('#8a8478');
 
   const canvas = document.getElementById('scene');
   const ctx = canvas.getContext('2d');
@@ -39,7 +40,8 @@ const Scene = (() => {
 
   const elev = fbm(rng(7), 6);
   const moist = fbm(rng(99), 4);
-  const seaThreshold = percentile(elev, 0.62);
+  const elevSorted = Float32Array.from(elev).sort();
+  let seaThreshold = elevSorted[Math.floor(elevSorted.length * 0.7)];
   const texColors = new Uint32Array(TEX_W * TEX_H * 3);
 
   let W = 0, H = 0, P = 1, cx = 0, cy = 0, R = 0;
@@ -47,17 +49,17 @@ const Scene = (() => {
   let sunBody = null, sunMood = null;
   // Camera for the opening: zoom 0 = close on a giant sun, 1 = normal layout with the planet in view.
   let zoom = 1, zoomTarget = 1, zoomSet = false, camY = 0, sunBg = false, layout = {};
-  let moon = { visible: false, wake: 0, bg: false, cur: null }, moonBody = null, moonKey = null;
+  let moon = { visible: false, wake: 0, bg: false, cur: null, fling: 0 }, moonBody = null, moonKey = null;
   let bgImage, bgPixels, pixU, pixV, pixShade, pixAlt, pixDither, stars = [], slots = [];
   let skyColors = [], spaceColor = 0, atmosphere = 10;
   let climate = null, smog = 0, spin = 0, lastBg = -1e9, currentSea = seaThreshold;
-  let landLife = 0, oceanLife = 0, ozone = 0;
+  let landLife = 0, oceanLife = 0, ozone = 0, land = 0.3, mountains = 0, aerosols = 0;
   let iceCoverValue = 1, pressure = 0, haze = 0, sunBright = 1;
   let counts = {}, groundSprites = [], skySprites = [], jetCount = 0, jets = [], jetTimer = 0;
   let clouds = [], cloudCover = 0, storms = 0;
   let particles = [], bolts = [], smokeRate = 0, smokeTimer = 0;
-  let sunPress = 0, comet = null;
-  let onSun = () => {}, onZone = () => {}, onCloud = () => {}, onComet = () => {}, onMoon = () => {};
+  let sunPress = 0, comet = null, spinLevel = 0, drag = null;
+  let onSun = () => {}, onZone = () => {}, onCloud = () => {}, onComet = () => {}, onMoon = () => {}, onSpinFn = () => {};
 
   /* ---------- helpers ---------- */
 
@@ -103,11 +105,6 @@ const Scene = (() => {
     }
     for (let i = 0; i < out.length; i++) out[i] /= total;
     return out;
-  }
-
-  function percentile(values, p) {
-    const sorted = Float32Array.from(values).sort();
-    return sorted[Math.floor(sorted.length * p)];
   }
 
   function hex(h) {
@@ -184,7 +181,7 @@ const Scene = (() => {
         if (lat + (e - seaThreshold) * 60 > limit) c = e < sea ? SEA_ICE : LAND_ICE;
         else if (e < sea - 0.06) c = deep;
         else if (e < sea) c = shallow;
-        else if (e > sea + 0.14) c = MOUNTAIN;
+        else if (e > sea + 0.14 - 0.08 * mountains) c = MOUNTAIN;
         else if (m < veg * 0.5) c = FOREST;
         else if (m < veg) c = GRASS;
         else c = t < 2 ? ROCK : desert;
@@ -205,6 +202,7 @@ const Scene = (() => {
       const low = 1 - k / (SKY_BANDS * 0.4);
       if (low > 0) c = mix(c, SMOG, smog * low * 0.8);
       if (k === SKY_BANDS - 2) c = mix(c, OZONE, ozone * 0.25); // the ozone layer, high in the sky
+      c = mix(c, ASH, aerosols * 0.5);                           // eruption aerosols dim the whole sky
       skyColors.push(pack(c));
     }
     spaceColor = pack(ramp(RAMPS.space, t));
@@ -400,9 +398,12 @@ const Scene = (() => {
     zoom += (zoomTarget - zoom) * Math.min(1, dt * 3);
     camY = Math.round(lerp(H * 0.62, 0, smooth(clamp01(zoom))));
     const k = Math.min(1, dt * 4), t = sunTarget(), m = moonTarget();
+    // A moon just thrown off the planet drifts slowly up to its place in the sky.
+    const km = moon.fling > 0 ? Math.min(1, dt * 1.2) : k;
+    moon.fling = Math.max(0, moon.fling - dt);
     for (const key of ['x', 'y', 'r']) {
       sunF[key] += (t[key] - sunF[key]) * k;
-      moon.cur[key] += (m[key] - moon.cur[key]) * k;
+      moon.cur[key] += (m[key] - moon.cur[key]) * km;
     }
     sun = { x: Math.round(sunF.x), y: Math.round(sunF.y), r: Math.max(2, Math.round(sunF.r)) };
   }
@@ -601,8 +602,10 @@ const Scene = (() => {
 
   function draw(now, dt) {
     if (!W) return;
-    spin = (spin + dt / SPIN_SECONDS) % 1;
-    if (now - lastBg > 120) {
+    // The player's spin turns the planet much faster than its slow idle drift.
+    const turn = 1 / SPIN_SECONDS + spinLevel ** 2 * 0.5;
+    spin = (spin + dt * turn) % 1;
+    if (now - lastBg > (turn > 0.03 ? 33 : 120)) {
       renderBackground();
       lastBg = now;
     }
@@ -659,12 +662,41 @@ const Scene = (() => {
     }
     const zone = zoneAt(x, y);
     if (!zone) return;
+    // On the planet a press is a tap (opens that zone) or a swipe (spins the planet); release decides.
+    if (zone !== 'atmosphere') {
+      drag = { x: e.clientX, moved: 0, zone, px: x, py: y };
+      canvas.setPointerCapture?.(e.pointerId);
+      return;
+    }
+    zoneTap(zone, x, y);
+  });
+
+  function zoneTap(zone, x, y) {
     const color = { atmosphere: '#a8dcff', ocean: '#3a8ad8', ground: '#c8a070' }[zone];
     for (let k = 0; k < 8; k++) {
       const a = k * Math.PI / 4;
       particles.push({ x, y, vx: Math.cos(a) * 18, vy: Math.sin(a) * 18, life: 0.3, max: 0.3, size: 1, color });
     }
     onZone(zone);
+  }
+
+  canvas.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    drag.x = e.clientX;
+    drag.moved += Math.abs(dx);
+    if (drag.moved <= 8) return;
+    onSpinFn(Math.abs(dx) / window.innerWidth);
+    if (Math.random() < 0.5) {
+      particles.push({ x: e.clientX / P, y: e.clientY / P, vx: Math.sign(dx) * 40, vy: 0, life: 0.3, max: 0.3, size: 1, color: '#e8eef8' });
+    }
+  });
+  canvas.addEventListener('pointerup', () => {
+    if (drag && drag.moved <= 8) zoneTap(drag.zone, drag.px, drag.py);
+    drag = null;
+  });
+  canvas.addEventListener('pointercancel', () => {
+    drag = null;
   });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   window.addEventListener('resize', resize);
@@ -783,6 +815,52 @@ const Scene = (() => {
     },
     onMoonTap(fn) {
       onMoon = fn;
+    },
+    // Called with the share of the screen width swiped across the planet.
+    onSpin(fn) {
+      onSpinFn = fn;
+    },
+    // Land share of the planet (moves the sea line), mountain share of the land, and eruption aerosols (0..1 each).
+    setLand(share, peaks, aero) {
+      const shape = Math.abs(share - land) > 0.004 || Math.abs(peaks - mountains) > 0.02;
+      const sky = Math.abs(aero - aerosols) > 0.02;
+      if (!shape && !sky) return;
+      if (shape) {
+        land = share;
+        mountains = peaks;
+        seaThreshold = elevSorted[Math.min(elevSorted.length - 1, Math.floor(elevSorted.length * (1 - land)))];
+      }
+      aerosols = aero;
+      if (climate === null) return;
+      if (shape) updateTexture(climate);
+      updateSky(climate);
+      lastBg = -1e9;
+    },
+    // A volcano erupts somewhere on the visible planet: lava, then a column of ash.
+    erupt(size = 1) {
+      const x = cx + (Math.random() - 0.5) * R * 0.8, y = groundY(x);
+      for (let k = 0; k < 25 * size; k++) {
+        const a = -Math.PI / 2 + (Math.random() - 0.5) * 0.9, v = 15 + Math.random() * 35 * size;
+        particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.8, max: 0.8, size: 1, color: Math.random() < 0.5 ? '#ff5a1a' : '#ffb02e' });
+      }
+      for (let k = 0; k < 30 * size; k++) {
+        particles.push({ x: x + (Math.random() - 0.5) * 4, y, vx: (Math.random() - 0.3) * 8, vy: -(10 + Math.random() * 25 * size), life: 2.5, max: 2.5, size: Math.random() < 0.5 ? 1 : 2, color: Math.random() < 0.5 ? '#8a8478' : '#5a5650' });
+      }
+    },
+    // How fast the planet turns (0..1).
+    setSpin(level) {
+      spinLevel = level;
+    },
+    // The planet throws off a blob of molten rock, which rises into the sky as the moon.
+    flingMoon() {
+      const y = groundY(cx);
+      moon.visible = true;
+      moon.cur = { x: cx, y, r: 1 };
+      moon.fling = 3;
+      for (let k = 0; k < 40; k++) {
+        const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.6, v = 20 + Math.random() * 50;
+        particles.push({ x: cx, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1.2, max: 1.2, size: Math.random() < 0.3 ? 2 : 1, color: Math.random() < 0.5 ? '#ff7a2a' : '#ffd23f' });
+      }
     },
     // Opening camera: 0 = close on the sun, 1 = normal layout. The first call jumps there directly.
     setOpening(z) {

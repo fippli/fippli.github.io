@@ -192,20 +192,6 @@ button {
 .tab { display: none; }
 .tab.active { display: block; }
 
-.buy-amount { display: flex; gap: 6px; margin-bottom: 8px; }
-
-.buy-amount button {
-  flex: 1;
-  padding: 7px 0;
-  font-family: var(--pixel-font);
-  font-size: 10px;
-  color: var(--muted);
-  background: var(--panel-2);
-  border: 2px solid var(--line);
-}
-
-.buy-amount button.active { background: var(--accent); border-color: #fff0c0; color: #2a1600; }
-
 /* ---------- Domains ---------- */
 
 .domain-head { margin-bottom: 8px; }
@@ -445,8 +431,8 @@ h3 { margin: 12px 4px 8px; font-family: var(--pixel-font); font-size: 10px; font
 @keyframes toast-out { to { transform: translateY(-20px); opacity: 0; } }
 
 /* A thawed gas: lit up, with a gauge of its level in the air. */
-.item.gas { opacity: 1; border-color: var(--accent); box-shadow: 0 0 8px rgba(255, 180, 58, .35); }
-.item.gas .icon { border-color: var(--accent); }
-.item.gas .meta .meter { margin: 4px 0 2px; }
-.item.gas .meta span { color: var(--text); }
-.item.gas .cost { color: var(--accent); }
+.item.researched { opacity: 1; border-color: var(--accent); box-shadow: 0 0 8px rgba(255, 180, 58, .35); }
+.item.researched .icon { border-color: var(--accent); }
+.item.researched .meta .meter { margin: 4px 0 2px; }
+.item.researched .meta span { color: var(--text); }
+.item.researched .cost { color: var(--accent); }
