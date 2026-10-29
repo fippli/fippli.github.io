@@ -31,15 +31,15 @@ const OCEAN_LAG_S = 60;            // extra lag once oceans are open: water take
 
 // The early game unlocks the planet in a fixed order. See spec.md, "Unlock sequence".
 const STEPS = [
-  { name: 'Light the sun', goal: 'Spin the planet until it keeps turning. Then tap the dark sun fast while it is up, before it sets.' },
-  { name: 'Melt ice', goal: 'Reach 0°C.', tab: 'sun' },
-  { name: 'Ocean', goal: 'Open 30% of the planet to water.', tab: 'ocean' },
-  { name: 'Clouds', goal: 'Make storms.' },
-  { name: 'Thunder', goal: 'Fill the primordial soup.' },
-  { name: 'Life', goal: 'The first cell is spreading through the ocean.', tab: 'oceanlife' },
-  { name: 'Water evolution', goal: `Evolve ocean life with DNA and keep the planet between ${LIFE_WINDOW[0]} and ${LIFE_WINDOW[1]}°C. Land opens at ${OZONE_FOR_LAND * 100}% ozone.`, tab: 'oceanlife' },
-  { name: 'Land', goal: 'Evolve land life. The first species that flies opens the sky.', tab: 'landlife' },
-  { name: 'Air', goal: 'Life rules the planet. The Age of Dinosaurs is coming next.', tab: 'airlife' },
+  { name: 'Light the sun' },
+  { name: 'Melt ice', tab: 'sun' },
+  { name: 'Ocean', tab: 'ocean' },
+  { name: 'Clouds' },
+  { name: 'Thunder' },
+  { name: 'Life', tab: 'oceanlife' },
+  { name: 'Water evolution', tab: 'oceanlife' },
+  { name: 'Land', tab: 'landlife' },
+  { name: 'Air', tab: 'airlife' },
 ];
 
 // Panel sections. Each one shows its research and species once unlocked.
@@ -64,11 +64,11 @@ const SECTIONS = {
 // In the order the story reaches them.
 const CATEGORIES = [
   { id: 'geology', icon: 'mountain', name: 'Geology', sections: ['core', 'land', 'ocean'] },
-  { id: 'astronomy', icon: 'planet', name: 'Astronomy', sections: ['moon', 'sun'], hint: 'The sky is empty. Swipe the planet to spin it.' },
-  { id: 'atmosphere', icon: 'cloud', name: 'Atmosphere', sections: ['atmosphere', 'noble'], hint: 'The solar wind blows any air away. The planet needs a magnetic field.' },
-  { id: 'biology', icon: 'cell', name: 'Biology', sections: ['oceanlife', 'landlife', 'airlife', 'life'], hint: 'There is no life yet. Lightning in the ocean will start it.' },
-  { id: 'science', icon: 'flask', name: 'Science', sections: [], hint: 'Science begins when humans evolve: math, chemistry and physics.' },
-  { id: 'technology', icon: 'gear', name: 'Technology', sections: [], hint: 'Technology grows out of science. It begins with humans.' },
+  { id: 'astronomy', icon: 'planet', name: 'Astronomy', sections: ['moon', 'sun'] },
+  { id: 'atmosphere', icon: 'cloud', name: 'Atmosphere', sections: ['atmosphere', 'noble'] },
+  { id: 'biology', icon: 'cell', name: 'Biology', sections: ['oceanlife', 'landlife', 'airlife', 'life'] },
+  { id: 'science', icon: 'flask', name: 'Science', sections: [] },
+  { id: 'technology', icon: 'gear', name: 'Technology', sections: [] },
   { id: 'world', icon: 'globe', name: 'World', sections: ['world'] },
 ];
 const CATEGORY_BY_ID = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
@@ -723,10 +723,7 @@ function updateTab(tab, root) {
   if (tab === 'sun') {
     setMeter(root, 'm-ignite', state.ignition);
     setMeter(root, 'm-sun', sunBrightness(), `${pct(sunBrightness())} of today`);
-    note('m-fusion', !state.spinLocked ? 'Swipe the planet to spin it.'
-      : state.ignition < 1 && !sunUp() ? 'The sun has set. It rises at 06:00.'
-      : state.ignition < 1 ? 'Each tap fuses hydrogen into helium and squeezes the core hotter. Stop tapping and it cools.'
-      : componentDone('sun') ? 'The sun is complete and rests in the background.' : '');
+    note('m-fusion', componentDone('sun') ? 'The sun is complete and rests in the background.' : '');
   }
   if (tab === 'moon') {
     note('m-moon-note', componentDone('moon') ? 'The moon is complete and rests in the background.' : '');
@@ -740,7 +737,7 @@ function updateTab(tab, root) {
   }
   if (tab === 'core') {
     setMeter(root, 'm-day', state.spin, state.spinLocked ? 'Locked' : pct(state.spin));
-    note('m-core', state.spinLocked ? '' : 'Swipe the planet to spin it.');
+    note('m-core', '');
   }
   if (tab === 'land') {
     const cool = aerosolCooling();
@@ -893,7 +890,7 @@ const STATUS_TEXT = { alive: 'Alive', extinct: 'Extinct', available: 'Evolve', w
 // Why a species cannot evolve yet, in a few words.
 function waitReason(s) {
   if (!evolved(s.parent)) return `after ${SPECIES_BY_ID[s.parent].name}`;
-  if (state.step < DOMAIN_STEP[s.domain]) return s.domain === 'ground' ? 'needs land (ozone)' : 'later step';
+  if (state.step < DOMAIN_STEP[s.domain]) return '???';
   if (!parentReady(s)) return `${SPECIES_BY_ID[s.parent].name} at 50%`;
   return `${fmt(s.cost)} DNA`;
 }
@@ -947,9 +944,6 @@ function renderLife() {
       <span class="blocked">${t.blocked} blocked</span>
       <span class="extinct">${t.extinct} extinct</span>
     </div>
-    <p class="note">${t.available + t.waiting > 0
-      ? `${t.available + t.waiting} species can still evolve. If every remaining branch is blocked, the run is over.`
-      : 'No branch is open anymore.'}</p>
     <ul class="tree">${lifeNode(SPECIES[0])}</ul>`;
   $('#panel').scrollTop = scroll;
   root.querySelectorAll('.node.available').forEach(n => n.addEventListener('click', () => {
@@ -991,7 +985,7 @@ function renderWorld() {
   $('#step-list').innerHTML = STEPS.map((s, n) => {
     const cls = n < state.step ? 'done' : n === state.step ? 'current' : 'locked';
     const mark = n < state.step ? '✓' : n === state.step ? '>' : '·';
-    return `<li class="${cls}"><b>${mark} ${n}. ${n <= state.step ? s.name : '???'}</b>${n === state.step ? `<span>${s.goal}</span>` : ''}</li>`;
+    return `<li class="${cls}"><b>${mark} ${n}. ${n <= state.step ? s.name : '???'}</b></li>`;
   }).join('');
 }
 
@@ -1010,9 +1004,6 @@ function floatText(x, y, text, cls = '') {
   el.fx.appendChild(d);
 }
 
-// A short hint that floats up from where the player tapped something locked.
-const hint = (text, x, y) => floatText(x, y, text, 'hint');
-
 const TEMP_COLORS = [[-300, '#8a7cff'], [-100, '#9fd3ff'], [-20, '#bfe6ff'], [LIFE_WINDOW[0], '#8af0b0'], [LIFE_WINDOW[1], '#ffa040'], [50, '#ff5a3a']];
 
 function tempColor(c) {
@@ -1022,7 +1013,7 @@ function tempColor(c) {
 }
 
 function tempCaption(c) {
-  if (!state.spinLocked) return state.spin > 0.02 ? `Spin ${pct(state.spin)}` : 'The planet barely turns';
+  if (!state.spinLocked) return state.spin > 0.02 ? `Spin ${pct(state.spin)}` : 'Dark planet';
   if (state.step === 0) {
     if (!sunUp()) return `${state.tempK.toFixed(0)} K · Night`;
     return `${state.tempK.toFixed(0)} K · ${state.ignition < 0.05 ? 'A dark sun is up' : `Sun ignition ${pct(state.ignition)}`}`;
@@ -1144,10 +1135,8 @@ Scene.onZoneTap((zone, x, y) => {
   if (zone !== 'atmosphere' && !state.spinLocked) zone = 'core';
   if (zone === 'ocean') zone = state.step >= 5 ? 'oceanlife' : state.step >= 2 ? 'ocean' : 'land';
   if (zone === 'ground') zone = state.step >= 7 ? 'landlife' : 'land';
-  if (!SECTIONS[zone].unlocked()) {
-    hint(categoryOf(zone).hint, x, y);
-    return;
-  }
+  // Locked parts do nothing: finding out what opens them is part of the game.
+  if (!SECTIONS[zone].unlocked()) return;
   toggleTab(zone);
   buzz(4);
 });
