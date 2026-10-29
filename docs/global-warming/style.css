@@ -101,25 +101,6 @@ button {
 
 .spacer { flex: 1; }
 
-/* ---------- Ticker ---------- */
-
-#ticker {
-  margin: 0 10px 6px 8px;
-  padding: 4px 10px;
-  background: rgba(5, 6, 15, .75);
-  border: 2px solid var(--line);
-  color: var(--muted);
-  text-align: center;
-  font-size: 18px;
-  min-height: 1.9em;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-#news { transition: opacity .4s; }
-#news.fade { opacity: 0; }
-
 /* ---------- Bottom sheet ---------- */
 
 #sheet {
@@ -139,6 +120,10 @@ button {
 /* ---------- Icon rail ---------- */
 
 #main { flex: 1; min-height: 0; display: flex; }
+
+/* The opening movie: only the big number and its caption stay on screen. */
+body.cinema #main, body.cinema .hud-line { visibility: hidden; }
+body.cinema .temp { font-size: clamp(16px, 5.5vw, 26px); }
 #column { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
 #rail {
@@ -302,6 +287,7 @@ h3 { margin: 12px 4px 8px; font-family: var(--pixel-font); font-size: 10px; font
 .float.soup { color: #8af0b0; }
 .float.rain { color: #8ac8ff; font-size: 11px; }
 .float.miss { color: #a09cc8; font-size: 10px; }
+.float.hint { width: 220px; font-size: 10px; line-height: 1.5; text-align: center; white-space: normal; animation-duration: 3s; }
 
 /* ---------- Life tab ---------- */
 
@@ -400,34 +386,6 @@ h3 { margin: 12px 4px 8px; font-family: var(--pixel-font); font-size: 10px; font
 @keyframes float-up {
   to { transform: translate(-50%, -260%); opacity: 0; }
 }
-
-/* ---------- Toasts ---------- */
-
-#toasts {
-  position: fixed;
-  left: 50%;
-  top: calc(env(safe-area-inset-top) + 10px);
-  transform: translateX(-50%);
-  width: min(92vw, 480px);
-  display: grid;
-  gap: 6px;
-  z-index: 20;
-  pointer-events: none;
-}
-
-.toast {
-  padding: 8px 10px;
-  background: rgba(20, 12, 30, .96);
-  border: 2px solid var(--accent);
-  box-shadow: 3px 3px 0 #000;
-  font-size: 18px;
-  animation: toast-in .3s steps(3), toast-out .4s steps(3) 4.6s forwards;
-}
-
-.toast b { display: block; font-family: var(--pixel-font); font-size: 10px; font-weight: normal; color: var(--accent); margin-bottom: 4px; line-height: 1.4; }
-
-@keyframes toast-in { from { transform: translateY(-20px); opacity: 0; } }
-@keyframes toast-out { to { transform: translateY(-20px); opacity: 0; } }
 
 /* A thawed gas: lit up, with a gauge of its level in the air. */
 .item.researched { opacity: 1; border-color: var(--accent); box-shadow: 0 0 8px rgba(255, 180, 58, .35); }

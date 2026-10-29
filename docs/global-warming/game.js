@@ -26,32 +26,25 @@ const dayHours = spin => 4 / (0.02 + 0.98 * spin);
 const THERMAL_LAG_S = 5;           // how fast temperature follows its target on an ice-covered planet
 const OCEAN_LAG_S = 60;            // extra lag once oceans are open: water takes long to heat
 
-// Frozen gases: the temperature (K) where each one can first be thawed into air.
-// Which gases actually thaw is the player's choice (Atmosphere panel); see spec.md, "Choosing what to thaw".
-const GASES = [
-  { id: 'n2', at: 63, title: 'Nitrogen can thaw', text: 'At −210 °C nitrogen ice can melt into air. Research it in the Atmosphere panel.' },
-  { id: 'ch4', at: 112, title: 'Methane can thaw', text: 'At −161 °C methane can become gas. Research it in the Atmosphere panel.' },
-  { id: 'co2', at: 195, title: 'CO₂ can thaw', text: 'At −78 °C CO₂ ice can turn to gas. Research it in the Atmosphere panel.' },
-];
-
 // The early game unlocks the planet in a fixed order. See spec.md, "Unlock sequence".
 const STEPS = [
   { name: 'Light the sun', goal: 'Tap the dark sun fast until it ignites. If you stop, its core cools down again.' },
-  { name: 'Melt ice', goal: 'Reach 0°C.', unlockText: 'The sun is lit and burns on its own. The planet below barely turns.', tab: 'sun' },
-  { name: 'Ocean', goal: 'Open 30% of the planet to water.', unlockText: 'Open water at 0°C! Something stirs in the sky.', tab: 'ocean' },
-  { name: 'Clouds', goal: 'Make storms.', unlockText: 'Warm water steams. The air feels thin.' },
-  { name: 'Thunder', goal: 'Fill the primordial soup.', unlockText: 'Storms! Tap a dark cloud.' },
-  { name: 'Life', goal: 'The first cell is spreading through the ocean.', unlockText: 'Lightning in the soup made something... alive. The first cell!', tab: 'oceanlife' },
-  { name: 'Water evolution', goal: `Evolve ocean life with DNA and keep the planet between ${LIFE_WINDOW[0]} and ${LIFE_WINDOW[1]}°C. Land opens at ${OZONE_FOR_LAND * 100}% ozone.`, unlockText: 'Life is established. Spend DNA to evolve.', tab: 'oceanlife' },
-  { name: 'Land', goal: 'Evolve land life. The first species that flies opens the sky.', unlockText: 'The ozone layer shields the land. Life can leave the water!', tab: 'landlife' },
-  { name: 'Air', goal: 'Life rules the planet. The Age of Dinosaurs is coming next.', unlockText: 'Something has taken to the air. The sky is alive!', tab: 'airlife' },
+  { name: 'Melt ice', goal: 'Reach 0°C.', tab: 'sun' },
+  { name: 'Ocean', goal: 'Open 30% of the planet to water.', tab: 'ocean' },
+  { name: 'Clouds', goal: 'Make storms.' },
+  { name: 'Thunder', goal: 'Fill the primordial soup.' },
+  { name: 'Life', goal: 'The first cell is spreading through the ocean.', tab: 'oceanlife' },
+  { name: 'Water evolution', goal: `Evolve ocean life with DNA and keep the planet between ${LIFE_WINDOW[0]} and ${LIFE_WINDOW[1]}°C. Land opens at ${OZONE_FOR_LAND * 100}% ozone.`, tab: 'oceanlife' },
+  { name: 'Land', goal: 'Evolve land life. The first species that flies opens the sky.', tab: 'landlife' },
+  { name: 'Air', goal: 'Life rules the planet. The Age of Dinosaurs is coming next.', tab: 'airlife' },
 ];
 
 // Panel sections. Each one shows its buildings, upgrades and species once unlocked.
 const SECTIONS = {
   sun: { name: 'Sun', unlocked: () => true },
   moon: { name: 'Moon', unlocked: () => state.moonBorn },
-  atmosphere: { name: 'Atmosphere', unlocked: () => state.step >= 1 || state.tempK >= GASES[0].at },
+  // Order: light the sun, spin the planet (magnetic field), then the air can stay.
+  atmosphere: { name: 'Atmosphere', unlocked: () => state.dynamo },
   core: { name: 'Core', unlocked: () => state.dynamo },
   land: { name: 'Land', unlocked: () => state.dynamo },
   ocean: { name: 'Ocean', unlocked: () => state.step >= 2 },
@@ -65,7 +58,7 @@ const SECTIONS = {
 // The icon rail on the left. Each category opens a panel made of sections.
 const CATEGORIES = [
   { id: 'astronomy', icon: 'planet', name: 'Astronomy', sections: ['sun', 'moon'] },
-  { id: 'atmosphere', icon: 'cloud', name: 'Atmosphere', sections: ['atmosphere'], hint: 'Nothing can thaw yet. Warm the planet with the sun.' },
+  { id: 'atmosphere', icon: 'cloud', name: 'Atmosphere', sections: ['atmosphere'], hint: 'The solar wind blows any air away. The planet needs a magnetic field.' },
   { id: 'geology', icon: 'mountain', name: 'Geology', sections: ['core', 'land', 'ocean'], hint: 'The core is still. Swipe the planet to spin it.' },
   { id: 'biology', icon: 'cell', name: 'Biology', sections: ['oceanlife', 'landlife', 'airlife', 'life'], hint: 'There is no life yet. Lightning in the ocean will start it.' },
   { id: 'science', icon: 'flask', name: 'Science', sections: [], hint: 'Science begins when humans evolve: math, chemistry and physics.' },
@@ -150,6 +143,12 @@ const RESEARCH = [
   { id: 'soil', icon: 'plant', tab: 'landlife', step: 7, needs: [['plants', 1]], name: 'Soil', dnaMult: { ground: 2 }, gauge: dnaGauge('ground') },
 ];
 const RESEARCH_BY_ID = Object.fromEntries(RESEARCH.map(r => [r.id, r]));
+// The opening: tap the singularity until it bangs, then a short flight through 9.2 billion years of space
+// (the sun formed about 9.2 billion years after the Big Bang, 4.6 billion years ago).
+const BANG_TAPS = 40;
+const BANG_DECAY = 0.1;
+const MOVIE_S = 9;
+const SUN_BIRTH_YEARS = 9.2e9;
 const IGNITION_TAPS = 80;
 const IGNITION_GRACE_S = 0.6;   // a pause this long between taps lets the core start cooling
 const IGNITION_DECAY = 0.08;    // ignition lost per second while not tapping
@@ -185,24 +184,14 @@ const DOMAIN_STEP = { ocean: 6, ground: 7, atmosphere: 7 };
 const SPECIES_SECTION = { ocean: 'oceanlife', ground: 'landlife', atmosphere: 'airlife' };
 const speciesTab = s => (s.domain === 'atmosphere' && state.step < 8 ? 'landlife' : SPECIES_SECTION[s.domain]);
 
-const NEWS = [
-  { step: 0, items: ['Forecast: dark. Also cold. Mostly dark.', 'Planet reports "it\'s a bit chilly, 35 kelvin".', 'Sun still asleep. Planet tries knocking.', 'Nitrogen frozen solid. Nobody can breathe it anyway.'] },
-  { step: 1, items: ['Snowball Earth: 100% ice, 0% fun.', 'Weather forecast: cold. Forever, apparently.', 'Volcanoes: the only warm thing for miles.', 'Local glacier wins "Most Glacier" award again.'] },
-  { step: 2, items: ['Equator now slushy. Ice is nervous.', 'First wave spotted. It was small.', 'Ocean reports "a bit of a draft".', 'Sun: "Keep tapping, it\'s working!"'] },
-  { step: 3, items: ['First cloud forms. Looks like a cloud.', 'Forecast: 100% chance of the first rain ever.', 'Puddles everywhere. Nobody to jump in them.'] },
-  { step: 4, items: ['Thunder heard for the first time. Nobody is scared yet.', 'Lightning strikes ocean. Ocean unbothered.', 'Primordial soup: needs more seasoning.'] },
-  { step: 5, items: ['Scientists would be thrilled, if they existed.', 'First cell copies itself. Then again. Then again.'] },
-  { step: 6, items: ['Ocean turns slightly green. Algae claims credit.', 'Oxygen eats methane. Planet feels a chill.', 'Jellyfish still has no brain. Doing fine.'] },
-  { step: 7, items: ['Moss conquers rock. Rock declines to comment.', 'Fish takes first step on land. Regrets it briefly.', 'Ferns everywhere. Coal deposits forming quietly.'] },
-  { step: 8, items: ['Insect learns to fly. Immediately annoying.', 'Sky now has bugs in it. Progress.', 'Somewhere, a dragonfly the size of a seagull.'] },
-];
-
 /* ================= State ================= */
 
 const freshState = () => ({
   step: 0,
   sunAge: 0,        // billion years since the sun ignited
   tempK: CORE_K,
+  bang: 0,          // 0..1, how hot the singularity is
+  banged: false,    // the Big Bang has happened
   ignition: 0,      // 0..1, how far the sun is lit
   pressure: 0,      // nitrogen air, 0..1 bar
   co2: 0,           // ppm in the air
@@ -210,7 +199,6 @@ const freshState = () => ({
   ch4: 0,           // ppm in the air
   ch4Ice: 10,       // ppm still frozen on the surface
   ice: 1,           // share of the planet under ice; follows temperature with a lag
-  gases: 0,         // how many gas thaw events have happened
   volcanoActivity: 1,
   land: START_LAND,     // share of the planet that is land
   mountains: 0,         // 0..1, how much of the land is mountains
@@ -240,6 +228,10 @@ let state = freshState();
 let owned = new Set();   // purchased upgrade ids
 let rates = { dnaBy: {} };          // per-second rates and climate parts, recalculated often
 let skipSave = false;
+let movieT = null;       // seconds into the opening flight, or null when it is not playing
+
+// The opening movie runs until the flight after the Big Bang ends; the planet waits.
+const inCinema = () => !state.banged || movieT !== null;
 
 function load() {
   // Open the game with ?reset to start over with a fresh save.
@@ -250,7 +242,11 @@ function load() {
   }
   try {
     const raw = localStorage.getItem(SAVE_KEY);
-    if (raw) state = { ...freshState(), ...JSON.parse(raw) };
+    if (raw) {
+      const saved = JSON.parse(raw);
+      // Saves from before the Big Bang opening skip it.
+      state = { ...freshState(), banged: true, ...saved };
+    }
   } catch (e) {
     console.warn('Save load failed', e);
   }
@@ -456,7 +452,6 @@ function simulate(dt) {
     if (next < 0.005) {
       state.species[id] = -2;
       state.extinct.push(id);
-      onExtinct(SPECIES_BY_ID[id], c);
     } else {
       state.species[id] = next;
     }
@@ -472,22 +467,6 @@ function erupt() {
   state.ash = Math.min(0.4, state.ash + 0.08 * size);
   state.co2 += 150 * size;
   Scene.erupt(size);
-  if (state.eruptions === 1) toast('Eruption!', 'Ash and gas shoot high into the sky.');
-  else showNews(['Volcano erupts. Sky goes grey. Sunsets spectacular.', 'Eruption! The ash cloud circles the planet.', 'Volcano clears its throat. Loudly.'][state.eruptions % 3]);
-}
-
-function onExtinct(s, c) {
-  const why = c < s.temp[0] ? 'too cold' : 'too hot';
-  toast(`Extinct: ${s.name}`, `It got ${why} at ${c.toFixed(1)}°C. Its descendants can no longer evolve.`);
-  showNews(`${s.name} gone forever. Planet ${why}.`);
-}
-
-function checkGases() {
-  while (state.gases < GASES.length && state.tempK >= GASES[state.gases].at) {
-    const g = GASES[state.gases++];
-    toast(g.title, g.text);
-    showNews(g.text);
-  }
 }
 
 /* ================= Tree status and game over ================= */
@@ -560,8 +539,6 @@ function checkSteps() {
   state.step++;
   if (state.step === 5) state.species.cell = 0.02;
   const s = STEPS[state.step];
-  toast(`Step ${state.step}: ${s.name}`, s.unlockText);
-  showNews(s.unlockText);
   buzz([30, 50, 30]);
   recalc();
   renderRail();
@@ -596,7 +573,7 @@ const fmtTemp = c => `${c.toFixed(1)}°C`;
 const $ = sel => document.querySelector(sel);
 const el = {
   temp: $('#temp'), tempSub: $('#temp-sub'), hudLine: $('#hud-line'),
-  fx: $('#fx'), news: $('#news'), sheet: $('#sheet'), toasts: $('#toasts'),
+  fx: $('#fx'), sheet: $('#sheet'),
 };
 
 const spriteImg = id => `<img class="sprite" src="${Sprites.icon(id)}" alt="">`;
@@ -778,17 +755,10 @@ function buy(e) {
   if (e.kind === 'research') {
     if (!canResearch(item)) return;
     owned.add(item.id);
-    // The player learns what opened up only by looking.
-    const opened = RESEARCH.filter(u => u.requires?.includes(item.id) && researchVisible(u)).map(u => u.name);
-    toast(`Researched: ${item.name}`, opened.length ? `New research: ${opened.join(', ')}.` : 'Watch the planet.');
-    if (['sun', 'moon'].includes(item.tab) && componentDone(item.tab)) {
-      toast(`${item.tab === 'sun' ? 'Sun' : 'Moon'} complete`, 'It moves to the background and keeps its effects.');
-    }
   } else {
     if (evolved(item.id) || isExtinct(item.id) || state.dna < item.cost || !parentReady(item)) return;
     state.dna -= item.cost;
     state.species[item.id] = 0.05;
-    toast(`Evolved: ${item.name}`, item.desc);
   }
   buzz(10);
   recalc();
@@ -869,8 +839,8 @@ function renderCategory(force = false, light = false) {
 function openCategory(cat, expand = true) {
   const c = CATEGORY_BY_ID[cat];
   if (!categoryUnlocked(c)) {
-    showNews(c.hint);
-    toast(`${c.name}: locked`, c.hint);
+    const r = document.querySelector(`#rail [data-cat="${cat}"]`).getBoundingClientRect();
+    hint(c.hint, r.right + 120, r.top + r.height / 2);
     return;
   }
   currentCat = cat;
@@ -1010,16 +980,8 @@ function floatText(x, y, text, cls = '') {
   el.fx.appendChild(d);
 }
 
-function toast(title, text) {
-  const d = document.createElement('div');
-  d.className = 'toast';
-  d.innerHTML = `<b></b><span></span>`;
-  d.querySelector('b').textContent = title;
-  d.querySelector('span').textContent = text;
-  el.toasts.appendChild(d);
-  setTimeout(() => d.remove(), 5000);
-  while (el.toasts.childElementCount > 3) el.toasts.firstChild.remove();
-}
+// A short hint that floats up from where the player tapped something locked.
+const hint = (text, x, y) => floatText(x, y, text, 'hint');
 
 const TEMP_COLORS = [[-300, '#8a7cff'], [-100, '#9fd3ff'], [-20, '#bfe6ff'], [LIFE_WINDOW[0], '#8af0b0'], [LIFE_WINDOW[1], '#ffa040'], [50, '#ff5a3a']];
 
@@ -1041,24 +1003,6 @@ function tempCaption(c) {
   return `Step ${state.step}: ${STEPS[state.step].name}`;
 }
 
-/* ================= News ticker ================= */
-
-let newsTimer = 0;
-
-function showNews(text) {
-  el.news.classList.add('fade');
-  setTimeout(() => {
-    el.news.textContent = text;
-    el.news.classList.remove('fade');
-  }, 400);
-  newsTimer = 0;
-}
-
-function randomNews() {
-  const pool = [...NEWS].reverse().find(n => state.step >= n.step).items;
-  showNews(pool[Math.floor(Math.random() * pool.length)]);
-}
-
 /* ================= Input ================= */
 
 // A sun tap is fusion: hydrogen nuclei collide in the core and become helium, releasing energy.
@@ -1078,6 +1022,20 @@ Scene.onSunTap((x, y) => {
   buzz(6);
 });
 
+// Each tap squeezes the singularity hotter. At full heat it bangs and the flight through space begins.
+Scene.onBangTap(() => {
+  if (state.banged) return;
+  state.sinceTap = 0;
+  state.bang = Math.min(1, state.bang + 1 / BANG_TAPS);
+  buzz(6);
+  if (state.bang >= 1) {
+    state.banged = true;
+    movieT = 0;
+    buzz([60, 40, 120]);
+    save();
+  }
+});
+
 Scene.onMoonTap(() => {
   if (!state.moonBorn) return;
   openTab('moon');
@@ -1091,16 +1049,13 @@ Scene.onSpin(amount => {
   state.spin = Math.min(1, state.spin + amount * SPIN_PER_SCREEN);
   if (!state.dynamo && state.spin >= DYNAMO_SPIN) {
     state.dynamo = true;
-    toast('Magnetic field', 'The spinning core woke up.');
-    showNews('Planet spins up. Compasses would work now, if anyone had one.');
+    floatText(innerWidth / 2, innerHeight / 2, 'Magnetic field!');
     buzz([30, 50, 30]);
     renderRail();
   }
   if (state.dynamo && !state.moonBorn && state.spin >= MOON_SPIN) {
     state.moonBorn = true;
     Scene.flingMoon();
-    toast('A moon!', 'The planet spun so fast it threw off a blob of molten rock.');
-    showNews('Planet loses weight. Blob now orbiting. Blob has a face.');
     buzz([40, 60, 40, 60]);
     renderRail();
   }
@@ -1138,15 +1093,15 @@ Scene.onCloudTap((kind, zone, x, y) => {
 
 // Tapping the planet opens the component under your finger. Before the ocean and land open,
 // the frozen surface and bare rock lead to the Core (volcanoes).
-Scene.onZoneTap(zone => {
+Scene.onZoneTap((zone, x, y) => {
   if (zone !== 'atmosphere' && state.step >= 1 && !state.dynamo) {
-    toast('The core is still', CATEGORY_BY_ID.geology.hint);
+    hint(CATEGORY_BY_ID.geology.hint, x, y);
     return;
   }
   if (zone === 'ocean') zone = state.step >= 5 ? 'oceanlife' : state.step >= 2 ? 'ocean' : 'land';
   if (zone === 'ground') zone = state.step >= 7 ? 'landlife' : 'land';
   if (!SECTIONS[zone].unlocked()) {
-    toast('Locked', CATEGORY_BY_ID.atmosphere.hint);
+    hint(categoryOf(zone).hint, x, y);
     return;
   }
   openTab(zone);
@@ -1164,8 +1119,7 @@ Scene.onCometTap((x, y) => {
     state.dna += dna;
     text += ` and +${fmt(dna)} DNA`;
   }
-  floatText(x, y, `+${fmt(reward)} minerals`);
-  toast('Comet!', `${text}.`);
+  floatText(x, y, text);
   buzz([20, 40, 20]);
 });
 
@@ -1202,7 +1156,6 @@ function newGame() {
   recalc();
   renderRail();
   openTab('sun');
-  toast('Fresh planet', 'Dark and frozen at 35 K. Tap the sun.');
 }
 
 $('#gameover-restart').addEventListener('click', newGame);
@@ -1210,6 +1163,7 @@ $('#gameover-restart').addEventListener('click', newGame);
 /* ================= Offline progress ================= */
 
 function applyOffline() {
+  if (!state.banged) return;
   const away = Math.min((Date.now() - state.lastTick) / 1000, OFFLINE_CAP_S);
   state.lastTick = Date.now();
   if (away < 10) return;
@@ -1220,7 +1174,6 @@ function applyOffline() {
     simulate(step * OFFLINE_RATE);
   }
   recalc();
-  toast('While you were away', `The planet kept turning for ${fmtTime(away)}.`);
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -1239,7 +1192,23 @@ window.addEventListener('storage', e => {
 
 /* ================= Main loop ================= */
 
+// Years since the Big Bang during the flight: slow at first, then racing, reaching the sun's birth on arrival.
+const movieYears = () => SUN_BIRTH_YEARS * clamp01(movieT / (MOVIE_S * 0.85)) ** 3;
+
+function fmtYears(y) {
+  if (y < 1e3) return `${Math.floor(y)} years`;
+  if (y < 1e6) return `${Math.floor(y / 1e3)} thousand years`;
+  if (y < 1e9) return `${Math.floor(y / 1e6)} million years`;
+  return `${(y / 1e9).toFixed(1)} billion years`;
+}
+
 function renderHud(c) {
+  if (inCinema()) {
+    el.temp.textContent = state.banged ? fmtYears(movieYears()) : '0 years';
+    el.tempSub.textContent = state.banged ? 'since the Big Bang' : state.bang < 0.02 ? 'Singularity' : `Singularity ${pct(state.bang)}`;
+    document.documentElement.style.setProperty('--temp-color', '#ffe08a');
+    return;
+  }
   el.temp.textContent = fmtTemp(c);
   el.tempSub.textContent = tempCaption(c);
   const parts = [];
@@ -1273,8 +1242,17 @@ let slowTimer = 0, worldTimer = 0, lifeTimer = 0, saveTimer = 0, lightningTimer 
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 1);
   last = now;
-  if (!state.over) simulate(dt);
+  if (!state.banged) {
+    // The singularity cools back down when the player stops tapping, like the sun before ignition.
+    state.sinceTap = (state.sinceTap || 0) + dt;
+    if (state.sinceTap > IGNITION_GRACE_S) state.bang = Math.max(0, state.bang - BANG_DECAY * dt);
+  } else if (movieT !== null) {
+    movieT += dt;
+    if (movieT >= MOVIE_S) movieT = null;
+  } else if (!state.over) simulate(dt);
   state.lastTick = Date.now();
+  Scene.setCinema(!state.banged ? 'pre' : movieT !== null ? 'warp' : null, !state.banged ? state.bang : movieT / MOVIE_S);
+  document.body.classList.toggle('cinema', inCinema());
 
   const c = tempC();
   renderHud(c);
@@ -1293,7 +1271,6 @@ function frame(now) {
   if (slowTimer > 0.2) {
     slowTimer = 0;
     recalc();
-    checkGases();
     checkSteps();
     checkGameOver();
     updateScene(c);
@@ -1312,9 +1289,6 @@ function frame(now) {
     lifeTimer = 0;
     if (currentCat === 'biology' && SECTIONS.life.unlocked()) renderLife();
   }
-
-  newsTimer += dt;
-  if (newsTimer > 10) randomNews();
 
   saveTimer += dt;
   if (saveTimer > 10) {
@@ -1337,7 +1311,6 @@ renderRail();
 updateScene(tempC());
 openCategory('astronomy', false);
 if (state.over) showGameOver();
-if (state.step > 0) randomNews();
 scheduleComet();
 requestAnimationFrame(frame);
 
