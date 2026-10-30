@@ -217,13 +217,7 @@ body.cinema .temp { font-size: clamp(16px, 5.5vw, 26px); }
 
 h3 { margin: 12px 4px 8px; font-family: var(--pixel-font); font-size: 10px; font-weight: normal; }
 
-.milestones { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 
-.milestones li { padding: 6px 8px; background: var(--panel-2); border: 2px solid var(--line); }
-.milestones li b { display: block; font-weight: normal; color: var(--text); }
-.milestones li span { color: var(--muted); }
-.milestones li.locked { opacity: .45; }
-.milestones .bonus { color: var(--accent); }
 
 .danger {
   display: block;
@@ -245,10 +239,6 @@ h3 { margin: 12px 4px 8px; font-family: var(--pixel-font); font-size: 10px; font
 .item.alive { opacity: 1; border-color: #2f6a4a; }
 .item.alive .cost { color: var(--good); }
 
-.milestones li.done b { color: var(--good); }
-.milestones li.current { border-color: var(--accent); }
-.milestones li.current b { color: var(--accent); }
-.milestones li span { display: block; }
 
 .item.extinct { opacity: .5; border-color: #3a2a2a; }
 .item.extinct .cost { color: var(--muted); }
