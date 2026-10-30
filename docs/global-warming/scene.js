@@ -34,6 +34,10 @@ const Scene = (() => {
   const OZONE = hex('#b49cff');
   const HAZE = hex('#d88a3a');
   const ASH = hex('#8a8478');
+  const SAND = hex('#e0c080');
+  const SAVANNA = hex('#a8b050');
+  const WETLAND = hex('#3a7a5a');
+  const TUNDRA = hex('#8a9a78');
 
   const canvas = document.getElementById('scene');
   const ctx = canvas.getContext('2d');
@@ -43,6 +47,9 @@ const Scene = (() => {
   const elev = fbm(rng(7), 6);
   const moist = fbm(rng(99), 4);
   const elevSorted = Float32Array.from(elev).sort();
+  // Moisture as a rank from 0 to 1: the raw noise bunches up near the middle.
+  const moistRank = new Float32Array(moist.length);
+  Array.from(moist.keys()).sort((a, b) => moist[a] - moist[b]).forEach((i, k) => (moistRank[i] = k / moist.length));
   let seaThreshold = elevSorted[Math.floor(elevSorted.length * 0.7)];
   const texColors = new Uint32Array(TEX_W * TEX_H * 3);
 
@@ -67,7 +74,11 @@ const Scene = (() => {
   const RIVER = hex('#3a7ad0');
   const LAKE = hex('#2a5aa8');
   let peakSpots = [], volcanoSpots = [], rivers = [], peaks = [], water = new Uint8Array(TEX_W * TEX_H);
-  let feat = { peaks: 0, snow: false, rivers: false, lakes: false, frozen: false };
+  let feat = { peaks: 0, snow: false, rivers: false, lakes: false, frozen: false, temp: 0, rain: 0, grass: false, forests: false, wetlands: false };
+  // Climate zones: how far each texel is from water (sea, rivers, lakes) and from fresh water, and the share of
+  // the land in each biome.
+  let shoreDist = new Uint8Array(TEX_W * TEX_H), freshDist = new Uint8Array(TEX_W * TEX_H), distKey = '';
+  let biomes = { desert: 0, green: 0, grass: 0, forest: 0, wetland: 0 };
   let counts = {}, groundSprites = [], skySprites = [], jetCount = 0, jets = [], jetTimer = 0;
   let clouds = [], cloudCover = 0, storms = 0;
   let particles = [], bolts = [], smokeRate = 0, smokeTimer = 0;
@@ -188,31 +199,84 @@ const Scene = (() => {
   // Planets lit by a dim sun look darker.
   const surfaceLight = () => 0.25 + 0.75 * Math.sqrt(clamp01(sunBright / 0.7));
 
+  // Distance in texels (up to max) from the nearest texel where isSource holds, over the whole map.
+  function distanceMap(out, max, isSource) {
+    out.fill(255);
+    const queue = [];
+    for (let i = 0; i < out.length; i++) if (isSource(i)) { out[i] = 0; queue.push(i); }
+    for (let k = 0; k < queue.length; k++) {
+      const i = queue[k], d = out[i] + 1;
+      if (d > max) continue;
+      const u = i % TEX_W, v = (i - u) / TEX_W;
+      for (const [du, dv] of NEIGHBOURS) {
+        if (v + dv < 0 || v + dv >= TEX_H) continue;
+        const j = (v + dv) * TEX_W + (u + du + TEX_W) % TEX_W;
+        if (out[j] > d) { out[j] = d; queue.push(j); }
+      }
+    }
+  }
+
+  // Local climate. The equator is about 13 °C warmer than the global mean and the poles about 40 °C colder;
+  // high ground is colder still.
+  const localTemp = (sin2, height) => feat.temp + 14 - 44 * sin2 - Math.max(0, height) * 60;
+  // Land dries out in the heat.
+  const dryLimit = temp => 0.35 + 0.02 * Math.max(0, temp - 24);
+
   function updateTexture(t) {
     const limit = iceLimit(), veg = landLife, light = surfaceLight();
     const sea = seaThreshold + (t > 0 ? Math.min(0.06, t * 0.004) : 0);
     currentSea = sea;
+    const key = `${sea.toFixed(3)}|${feat.rivers}|${feat.lakes}|${feat.peaks}`;
+    if (key !== distKey) {
+      distKey = key;
+      distanceMap(shoreDist, 12, i => elev[i] < sea || water[i] > 0);
+      distanceMap(freshDist, 3, i => water[i] > 0 && elev[i] >= sea);
+    }
+    // Plants change the bare ground: where they can't grow it is sand desert.
+    const plants = veg > 0.01 || feat.grass || feat.forests;
+    const count = { desert: 0, green: 0, grass: 0, forest: 0, wetland: 0 };
+    let landArea = 0;
     const deep = mix(ramp(RAMPS.deep, t), BLOOM, oceanLife * 0.3);
     const shallow = mix(ramp(RAMPS.shallow, t), BLOOM, oceanLife * 0.45);
     const desert = ramp(RAMPS.desert, t);
     for (let v = 0; v < TEX_H; v++) {
-      const lat = Math.abs(90 - (v + 0.5) / TEX_H * 180);
+      const lat = Math.abs(90 - (v + 0.5) / TEX_H * 180), sin2 = Math.sin(lat * Math.PI / 180) ** 2;
+      const area = Math.cos(lat * Math.PI / 180);
+      // Air rises and rains out at the equator, and sinks dry over the subtropics (deserts near 25-30°).
+      const band = 0.25 * Math.exp(-((lat / 10) ** 2)) - 0.4 * Math.exp(-(((lat - 27) / 9) ** 2));
       for (let u = 0; u < TEX_W; u++) {
-        const i = v * TEX_W + u, e = elev[i], m = moist[i];
+        const i = v * TEX_W + u, e = elev[i];
         let c;
         if (lat + (e - seaThreshold) * 60 > limit) c = e < sea ? SEA_ICE : LAND_ICE;
         else if (water[i] && e >= sea) c = feat.frozen ? SEA_ICE : water[i] === 2 ? LAKE : RIVER;
         else if (e < sea - 0.06) c = deep;
         else if (e < sea) c = shallow;
         else if (e > sea + 0.14 - 0.08 * mountains) c = MOUNTAIN;
-        else if (m < veg * 0.5) c = FOREST;
-        else if (m < veg) c = GRASS;
-        else c = t < 2 ? ROCK : desert;
+        else if (!plants) c = t < 2 ? ROCK : desert;
+        else {
+          // How much wetter than needed the ground is: moist noise, nearby water and rain against the heat.
+          const temp = localTemp(sin2, e - sea);
+          const wet = 0.45 * moistRank[i] + 0.4 * (1 - Math.min(12, shoreDist[i]) / 12) + 0.3 * feat.rain + band - dryLimit(temp);
+          if (temp < -2) c = wet > 0 ? TUNDRA : ROCK;
+          else if (feat.wetlands && freshDist[i] <= 2 && temp > 0) c = WETLAND;
+          else if ((feat.forests && wet > 0.15 && temp < 35) || (veg > 0.6 && wet > 0.3)) c = FOREST;
+          else if (wet > 0.25 * (1 - veg)) c = GRASS;
+          else if (feat.grass && wet > -0.08) c = SAVANNA;
+          else c = SAND;
+          landArea += area;
+          if (c === SAND) count.desert += area;
+          else if (c !== ROCK) count.green += area;
+          if (c === GRASS || c === SAVANNA) count.grass += area;
+          if (c === FOREST) count.forest += area;
+          if (c === WETLAND) count.wetland += area;
+        }
         texColors[i * 3] = pack(c, 1.18 * light);
         texColors[i * 3 + 1] = pack(c, light);
         texColors[i * 3 + 2] = pack(c, 0.68 * light);
       }
     }
+    for (const k in count) count[k] = landArea ? count[k] / landArea : 0;
+    biomes = count;
   }
 
   function updateSky(t) {
@@ -1224,13 +1288,16 @@ const Scene = (() => {
     // run from them, and whether that water is frozen.
     setFeatures(f) {
       if (Object.keys(feat).every(k => f[k] === feat[k])) return;
-      const wet = f.rivers !== feat.rivers || f.lakes !== feat.lakes || f.frozen !== feat.frozen || f.peaks !== feat.peaks;
+      const wet = f.rivers !== feat.rivers || f.lakes !== feat.lakes || f.peaks !== feat.peaks;
       feat = { ...feat, ...f };
       if (f.peaks !== peaks.length) peaks = grow(peaks, peakSpots, f.peaks);
-      if (!wet) return;
-      updateWater();
+      if (wet) updateWater();
       if (climate !== null) updateTexture(climate);
       lastBg = -1e9;
+    },
+    // Share of the land (outside ice and mountains) in each biome: desert, green, grass, forest, wetland.
+    biomes() {
+      return biomes;
     },
     // How many lakes are on the planet now.
     // Screen positions of the volcanoes in view (for tests).

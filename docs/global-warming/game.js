@@ -86,6 +86,8 @@ const ASH_LIFE_S = 120;
 // learns what it does by watching it move as the rest of the planet changes.
 const logLevel = (v, max) => clamp01(Math.log10(1 + Math.max(0, v)) / Math.log10(1 + max));
 const sunGauge = () => [sunBrightness(), `${pct(sunBrightness())} of today · ${state.sunAge.toFixed(1)} Gyr old`];
+// Wetlands rot plants without oxygen and give off methane, more in the warmth.
+const wetlandMethane = () => (has('wetlands') ? 0.04 * clamp01(tempC() / 15) : 0);
 // Snow on the peaks: glaciers grow on high mountains while the planet is cool enough.
 const glacierIce = () => (has('glaciers') ? clamp01((30 - tempC()) / 30) * Math.min(1, state.mountains * 2) : 0);
 // Water running down the rivers: glacier melt and rain, none while frozen.
@@ -174,7 +176,16 @@ const RESEARCH = [
     gauge: () => { const n = SPECIES.filter(sp => evolved(sp.id)).length; return [n / SPECIES.length, `${n} species alive`]; } },
   // Life
   { id: 'shallows', icon: 'wave', tab: 'oceanlife', step: 6, needs: [['species', 5], ['done', 'collision']], days: 2, name: 'Shallow Seas', dnaMult: { ocean: 2 }, gauge: dnaGauge('ocean') },
-  { id: 'soil', icon: 'plant', tab: 'landlife', step: 7, needs: [['plants', 1], ['done', 'rivers']], days: 2, name: 'Soil', dnaMult: { ground: 2 }, gauge: dnaGauge('ground') },
+  { id: 'soil', icon: 'plant', tab: 'landlife', step: 7, needs: [['plants', 1], ['done', 'rivers']], days: 2, name: 'Soil', dnaMult: { ground: 2 },
+    gauge: () => [Scene.biomes().green, `${pct(Scene.biomes().green)} green · ${pct(Scene.biomes().desert)} desert`] },
+  // Biomes: where each can grow depends on the local climate, so they shift as the planet warms or cools.
+  // Deserts spread in the heat and cut land life.
+  { id: 'grass', icon: 'plant', tab: 'landlife', step: 7, requires: ['soil'], needs: [['plants', 2]], days: 2, name: 'Grasslands', dnaMult: { ground: 1.5 },
+    gauge: () => [Scene.biomes().grass, `${pct(Scene.biomes().grass)} grassland · ${pct(Scene.biomes().desert)} desert`] },
+  { id: 'forests', icon: 'tree', tab: 'landlife', step: 7, requires: ['soil'], needs: [['plants', 3]], days: 3, name: 'Forests', dnaMult: { ground: 1.5 },
+    gauge: () => [Scene.biomes().forest, `${pct(Scene.biomes().forest)} forest`] },
+  { id: 'wetlands', icon: 'plant', tab: 'landlife', step: 7, requires: ['soil'], needs: [['done', 'lakes'], ['temp', 5]], days: 2, name: 'Wetlands', dnaMult: { ground: 1.5 },
+    gauge: () => [clamp01(Scene.biomes().wetland * 10), `${pct(Scene.biomes().wetland)} wetland · +${wetlandMethane().toFixed(2)} ppm CH₄/s`] },
 ];
 const RESEARCH_BY_ID = Object.fromEntries(RESEARCH.map(r => [r.id, r]));
 // The opening: tap the singularity until it bangs, then fly through 9.2 billion years of space
@@ -386,7 +397,8 @@ function climate() {
   const dust = state.step >= 1 ? Math.min(0.8, volcanoes() * VOLCANO_DUST + state.ash) : 0;
   // Methane haze without oxygen reflects sunlight too (like Titan's haze). So do eruption aerosols and snowy peaks.
   const albedo = 0.22 + 0.43 * ice * (1 - 0.5 * dust) + 0.08 * state.clouds + 0.1 * methaneHaze()
-    + 0.2 * state.aerosols + 0.03 * state.mountains + 0.02 * glacierIce();
+    + 0.2 * state.aerosols + 0.03 * state.mountains + 0.02 * glacierIce()
+    + state.land * (0.15 * Scene.biomes().desert - 0.08 * Scene.biomes().forest);   // bright sand, dark forest
   const sunK = 255 * Math.pow(Math.max(0, sunBrightness() * (1 - albedo) / 0.7), 0.25);
   const bare = Math.pow(sunK ** 4 + CORE_K ** 4, 0.25);
   // Greenhouse: each doubling of CO2 adds a few degrees; thin air holds less heat; water vapor amplifies it.
@@ -397,7 +409,7 @@ function climate() {
 
 function recalc() {
   const r = {
-    co2: 0, ch4: best('ch4'), minerals: best('minerals') + 2 * riverFlow(), dna: 0, o2: 0, clouds: 0, green: 0, life: 0,
+    co2: 0, ch4: best('ch4') + wetlandMethane(), minerals: best('minerals') + 2 * riverFlow(), dna: 0, o2: 0, clouds: 0, green: 0, life: 0,
     dnaBy: { ocean: 0, ground: 0, atmosphere: 0 }, weathering: rates.weathering || 0,
     // Thunderstorms strike on their own, more often the stormier the sky.
     lightning: best('lightning') * clamp01(state.clouds / STORM_CLOUDS),
@@ -411,7 +423,8 @@ function recalc() {
   for (const s of SPECIES) {
     const p = pop(s.id);
     if (p < 0) continue;
-    const dnaMult = RESEARCH.reduce((m, u) => (has(u.id) && u.dnaMult ? m * (u.dnaMult[s.domain] ?? u.dnaMult.all ?? 1) : m), 1);
+    let dnaMult = RESEARCH.reduce((m, u) => (has(u.id) && u.dnaMult ? m * (u.dnaMult[s.domain] ?? u.dnaMult.all ?? 1) : m), 1);
+    if (s.domain === 'ground') dnaMult *= 1 - 0.7 * Scene.biomes().desert;   // little lives in the desert
     r.dna += s.dna * p * dnaMult;
     r.dnaBy[s.domain] += s.dna * p * dnaMult;
     r.o2 += (s.o2 || 0) * p;
@@ -491,7 +504,7 @@ function simulate(dt) {
   const c = tempC(), open = 1 - iceCover();
   // Weathering speeds up sharply in the heat, with more land, and most of all on fresh mountain rock.
   const rock = state.land / BASE_LAND * (1 + 2 * state.mountains);
-  const weathering = 0.002 * state.co2 * Math.max(0, c / 15) ** 1.5 * open * rock * mult('weatherMult') * (1 + 0.5 * riverFlow());
+  const weathering = 0.002 * state.co2 * Math.max(0, c / 15) ** 1.5 * open * rock * mult('weatherMult') * (1 + 0.5 * riverFlow()) * (1 + Scene.biomes().forest);   // roots break rock
   const photosynthesis = rates.o2 * 1500 * state.co2 / (state.co2 + 1000);   // slows when CO2 runs low
   rates.weathering = weathering;
   state.co2 = Math.max(0, state.co2 + (rates.co2 - weathering - photosynthesis) * dt);
@@ -983,6 +996,7 @@ function renderWorld() {
     ['Methane', `${state.ch4.toFixed(1)} ppm`],
     ['Ice cover', pct(iceCover())],
     ['Land', `${pct(state.land)} (${pct(state.mountains)} mountains)`],
+    ...(Scene.biomes().green + Scene.biomes().desert > 0 ? [['Desert', `${pct(Scene.biomes().desert)} of land`]] : []),
     ['Open ocean', pct(openOcean())],
     ['Eruption aerosols', pct(state.aerosols)],
     ['Clouds', pct(state.clouds)],
@@ -1291,6 +1305,8 @@ function updateScene(c) {
   Scene.setFeatures({
     peaks: has('collision') ? Math.max(1, Math.round(state.mountains * 8)) : 0,
     snow: glacierIce() > 0.05, rivers: has('rivers'), lakes: has('lakes'), frozen: tempC() < 0,
+    temp: Math.round(tempC()), rain: has('rain') ? Math.round(state.clouds * 20) / 20 : 0,
+    grass: has('grass'), forests: has('forests'), wetlands: has('wetlands'),
   });
   const storms = state.step >= 4 ? Math.min(3, 1 + Math.floor((state.clouds - STORM_CLOUDS) * 10)) : 0;
   Scene.setClouds(has('clouds') ? state.clouds : 0, Math.max(0, storms));
