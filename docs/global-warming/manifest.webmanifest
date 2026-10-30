@@ -1,7 +1,7 @@
 {
-  "name": "Global Warming",
-  "short_name": "Warming",
-  "description": "Tap the sun, pump oil, build factories. Cook the planet.",
+  "name": "Phylarium",
+  "short_name": "Phylarium",
+  "description": "Light the sun and grow a living planet in a jar. Evolve as many species as you can.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
