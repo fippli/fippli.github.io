@@ -175,7 +175,8 @@ const RESEARCH = [
   { id: 'tilt', icon: 'wave', tab: 'moon', step: 2, requires: ['tides'], needs: [['days', 30]], days: 2, name: 'Stable Tilt', tilt: true,
     gauge: () => { const n = SPECIES.filter(sp => evolved(sp.id)).length; return [n / SPECIES.length, `${n} species alive`]; } },
   // Life
-  { id: 'shallows', icon: 'wave', tab: 'oceanlife', step: 6, needs: [['species', 5], ['done', 'collision']], days: 2, name: 'Shallow Seas', dnaMult: { ocean: 2 }, gauge: dnaGauge('ocean') },
+  { id: 'shallows', icon: 'wave', tab: 'oceanlife', step: 6, needs: [['species', 5], ['done', 'collision']], days: 2, name: 'Shallow Seas', dnaMult: { ocean: 2 },
+    gauge: () => [Scene.zones().reef, `${pct(Scene.zones().reef)} reef${Scene.zones().bleached > 0.005 ? ` · ${pct(Scene.zones().bleached)} bleached` : ''}`] },
   { id: 'soil', icon: 'plant', tab: 'landlife', step: 7, needs: [['plants', 1], ['done', 'rivers']], days: 2, name: 'Soil', dnaMult: { ground: 2 },
     gauge: () => [Scene.biomes().green, `${pct(Scene.biomes().green)} green · ${pct(Scene.biomes().desert)} desert`] },
   // Biomes: where each can grow depends on the local climate, so they shift as the planet warms or cools.
@@ -205,6 +206,8 @@ const IGNITION_DECAY = 0.08;    // ignition lost per second while not tapping
 
 // The tree of life for this slice. Habitat (domain) decides which step a species needs.
 // dna and o2 are per second at full population. temp is the global mean range (°C) the species can live in.
+// home lists the climate zones a land species lives in (see Scene.zones); its population can only fill
+// as much as those zones allow, so spreading deserts or ice push it back.
 const SPECIES = [
   { id: 'cell', icon: 'cell', domain: 'ocean', name: 'First Cell', desc: 'A blob of chemistry that copies itself.', dna: 0.5, temp: [0, 80] },
   { id: 'cyano', icon: 'cell', domain: 'ocean', parent: 'cell', name: 'Cyanobacteria', desc: 'Turns sunlight into sugar. Oxygen is the waste.', cost: 10, dna: 1, o2: 0.0015, temp: [0, 70] },
@@ -219,13 +222,13 @@ const SPECIES = [
   { id: 'fish', icon: 'fish', domain: 'ocean', parent: 'chordate', name: 'Fish', desc: 'Fins, gills and a backbone.', cost: 2000, dna: 12, temp: [4, 34] },
   { id: 'shark', icon: 'fish', domain: 'ocean', parent: 'fish', name: 'Sharks', desc: 'Older than trees. Still hungry.', cost: 5000, dna: 25, temp: [6, 36] },
   { id: 'lobefin', icon: 'fish', domain: 'ocean', parent: 'fish', name: 'Lobe-finned Fish', desc: 'Fins that look suspiciously like legs.', cost: 6000, dna: 25, temp: [6, 34] },
-  { id: 'moss', icon: 'plant', domain: 'ground', parent: 'algae', name: 'Mosses', desc: 'The first plants on land. Green, soft, damp.', cost: 4000, dna: 15, o2: 0.004, green: 0.25, temp: [2, 34] },
-  { id: 'fern', icon: 'plant', domain: 'ground', parent: 'moss', name: 'Ferns', desc: 'Plants with plumbing. They can grow tall.', cost: 10000, dna: 30, o2: 0.006, green: 0.3, temp: [6, 36] },
-  { id: 'insect', icon: 'bug', domain: 'ground', parent: 'arthropod', name: 'Insects', desc: 'Six legs, endless numbers.', cost: 12000, dna: 40, temp: [8, 38] },
-  { id: 'conifer', icon: 'tree', domain: 'ground', parent: 'fern', name: 'Conifers', desc: 'The first real forests.', cost: 30000, dna: 80, o2: 0.01, green: 0.35, temp: [2, 32] },
-  { id: 'amphibian', icon: 'frog', domain: 'ground', parent: 'lobefin', name: 'Amphibians', desc: 'Half fish, half frog, all damp.', cost: 35000, dna: 90, temp: [10, 34] },
-  { id: 'reptile', icon: 'frog', domain: 'ground', parent: 'amphibian', name: 'Reptiles', desc: 'Eggs with shells. No more ponds needed.', cost: 100000, dna: 200, temp: [12, 38] },
-  { id: 'flyer', icon: 'fly', domain: 'atmosphere', parent: 'insect', name: 'Flying Insects', desc: 'The first wings on the planet.', cost: 60000, dna: 150, temp: [10, 38] },
+  { id: 'moss', icon: 'plant', domain: 'ground', parent: 'algae', name: 'Mosses', desc: 'The first plants on land. Green, soft, damp.', cost: 4000, dna: 15, o2: 0.004, green: 0.25, temp: [2, 34], home: ['wet', 'moist', 'cold'] },
+  { id: 'fern', icon: 'plant', domain: 'ground', parent: 'moss', name: 'Ferns', desc: 'Plants with plumbing. They can grow tall.', cost: 10000, dna: 30, o2: 0.006, green: 0.3, temp: [6, 36], home: ['wet'] },
+  { id: 'insect', icon: 'bug', domain: 'ground', parent: 'arthropod', name: 'Insects', desc: 'Six legs, endless numbers.', cost: 12000, dna: 40, temp: [8, 38], home: ['wet', 'moist'] },
+  { id: 'conifer', icon: 'tree', domain: 'ground', parent: 'fern', name: 'Conifers', desc: 'The first real forests.', cost: 30000, dna: 80, o2: 0.01, green: 0.35, temp: [2, 32], home: ['wet', 'moist', 'cold'] },
+  { id: 'amphibian', icon: 'frog', domain: 'ground', parent: 'lobefin', name: 'Amphibians', desc: 'Half fish, half frog, all damp.', cost: 35000, dna: 90, temp: [10, 34], home: ['fresh', 'wet'] },
+  { id: 'reptile', icon: 'frog', domain: 'ground', parent: 'amphibian', name: 'Reptiles', desc: 'Eggs with shells. No more ponds needed.', cost: 100000, dna: 200, temp: [12, 38], home: ['moist', 'dry'] },
+  { id: 'flyer', icon: 'fly', domain: 'atmosphere', parent: 'insect', name: 'Flying Insects', desc: 'The first wings on the planet.', cost: 60000, dna: 150, temp: [10, 38], home: ['wet', 'moist'] },
 ];
 const SPECIES_BY_ID = Object.fromEntries(SPECIES.map(s => [s.id, s]));
 // Step a habitat needs before its species can evolve. Flyers only need land; evolving one opens step 8.
@@ -435,6 +438,13 @@ function recalc() {
   rates = r;
 }
 
+// How much of a full population the habitat holds (0..1): 60% of the land in its zones is plenty.
+function habitat(s) {
+  if (!s.home) return 1;
+  const z = Scene.zones();
+  return clamp01(s.home.reduce((n, k) => n + z[k], 0) / 0.6);
+}
+
 // How well a species fits the current temperature: 1 inside its range, negative outside.
 function fitness(s, c) {
   const [lo, hi] = s.temp;
@@ -522,12 +532,16 @@ function simulate(dt) {
   // Clouds form from evaporation and rain out at 5% per second.
   if (has('clouds')) state.clouds = clamp01(state.clouds + (rates.clouds - state.clouds * 0.05) * dt);
 
-  // Species grow toward a full population inside their temperature range and die back outside it.
+  // Species grow toward what their habitat holds inside their temperature range, shrink back when the habitat
+  // shrinks, and die back outside the range.
   for (const id of Object.keys(state.species)) {
     const p = state.species[id];
     if (p < 0) continue;
-    const f = fitness(SPECIES_BY_ID[id], c);
-    const next = f > 0 ? Math.min(1, p + p * (1 - p) * 0.25 * dt) : p * (1 + f * (has('tilt') ? 0.075 : 0.15) * dt);
+    const s = SPECIES_BY_ID[id], f = fitness(s, c), room = habitat(s);
+    let next;
+    if (f <= 0) next = p * (1 + f * (has('tilt') ? 0.075 : 0.15) * dt);
+    else if (p > room) next = p - (p - room) * Math.min(1, 0.1 * dt);
+    else next = Math.min(room, p + p * (1 - p) * 0.25 * dt);
     if (next < 0.005) {
       state.species[id] = -2;
       state.extinct.push(id);
@@ -931,7 +945,7 @@ function lifeNode(s) {
   const blockedBy = status === 'blocked' ? [...ancestors(s)].find(a => isExtinct(a.id)) : null;
   let detail = '';
   if (status === 'alive') {
-    const dying = fitness(s, tempC()) < 0;
+    const dying = fitness(s, tempC()) < 0 || p > habitat(s) + 0.01;
     detail = `<span class="bar"><i style="width:${pct(p)}"></i></span>${dying ? '<em class="warn">dying</em>' : pct(p)}`;
   } else if (status === 'available') detail = `${fmt(s.cost)} DNA`;
   else if (status === 'waiting') detail = known ? waitReason(s) : '';
@@ -1306,7 +1320,7 @@ function updateScene(c) {
     peaks: has('collision') ? Math.max(1, Math.round(state.mountains * 8)) : 0,
     snow: glacierIce() > 0.05, rivers: has('rivers'), lakes: has('lakes'), frozen: tempC() < 0,
     temp: Math.round(tempC()), rain: has('rain') ? Math.round(state.clouds * 20) / 20 : 0,
-    grass: has('grass'), forests: has('forests'), wetlands: has('wetlands'),
+    grass: has('grass'), forests: has('forests'), wetlands: has('wetlands'), reefs: has('shallows'),
   });
   const storms = state.step >= 4 ? Math.min(3, 1 + Math.floor((state.clouds - STORM_CLOUDS) * 10)) : 0;
   Scene.setClouds(has('clouds') ? state.clouds : 0, Math.max(0, storms));
@@ -1383,6 +1397,7 @@ load();
 Scene.init();
 buildPanels();
 recalc();
+updateScene(tempC());   // the scene works out the climate zones that habitats depend on
 applyOffline();
 updateScene(tempC());
 openCategory('geology', false);

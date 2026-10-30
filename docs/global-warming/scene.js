@@ -38,6 +38,8 @@ const Scene = (() => {
   const SAVANNA = hex('#a8b050');
   const WETLAND = hex('#3a7a5a');
   const TUNDRA = hex('#8a9a78');
+  const REEF = hex('#e0708a');
+  const BLEACHED = hex('#ece4d4');
 
   const canvas = document.getElementById('scene');
   const ctx = canvas.getContext('2d');
@@ -74,11 +76,14 @@ const Scene = (() => {
   const RIVER = hex('#3a7ad0');
   const LAKE = hex('#2a5aa8');
   let peakSpots = [], volcanoSpots = [], rivers = [], peaks = [], water = new Uint8Array(TEX_W * TEX_H);
-  let feat = { peaks: 0, snow: false, rivers: false, lakes: false, frozen: false, temp: 0, rain: 0, grass: false, forests: false, wetlands: false };
+  let feat = { peaks: 0, snow: false, rivers: false, lakes: false, frozen: false, temp: 0, rain: 0, grass: false, forests: false, wetlands: false, reefs: false };
   // Climate zones: how far each texel is from water (sea, rivers, lakes) and from fresh water, and the share of
   // the land in each biome.
   let shoreDist = new Uint8Array(TEX_W * TEX_H), freshDist = new Uint8Array(TEX_W * TEX_H), distKey = '';
   let biomes = { desert: 0, green: 0, grass: 0, forest: 0, wetland: 0 };
+  // Climate zones of the land, whether or not anything grows there yet (shares of land outside ice and
+  // mountains): cold, wet, moist, dry, and fresh (next to rivers and lakes). Reef and bleached are shares of the shallows.
+  let zones = { cold: 0, wet: 0, moist: 0, dry: 0, fresh: 0, reef: 0, bleached: 0 };
   let counts = {}, groundSprites = [], skySprites = [], jetCount = 0, jets = [], jetTimer = 0;
   let clouds = [], cloudCover = 0, storms = 0;
   let particles = [], bolts = [], smokeRate = 0, smokeTimer = 0;
@@ -235,7 +240,8 @@ const Scene = (() => {
     // Plants change the bare ground: where they can't grow it is sand desert.
     const plants = veg > 0.01 || feat.grass || feat.forests;
     const count = { desert: 0, green: 0, grass: 0, forest: 0, wetland: 0 };
-    let landArea = 0;
+    const zone = { cold: 0, wet: 0, moist: 0, dry: 0, fresh: 0, reef: 0, bleached: 0 };
+    let landArea = 0, shallowArea = 0;
     const deep = mix(ramp(RAMPS.deep, t), BLOOM, oceanLife * 0.3);
     const shallow = mix(ramp(RAMPS.shallow, t), BLOOM, oceanLife * 0.45);
     const desert = ramp(RAMPS.desert, t);
@@ -250,33 +256,45 @@ const Scene = (() => {
         if (lat + (e - seaThreshold) * 60 > limit) c = e < sea ? SEA_ICE : LAND_ICE;
         else if (water[i] && e >= sea) c = feat.frozen ? SEA_ICE : water[i] === 2 ? LAKE : RIVER;
         else if (e < sea - 0.06) c = deep;
-        else if (e < sea) c = shallow;
-        else if (e > sea + 0.14 - 0.08 * mountains) c = MOUNTAIN;
-        else if (!plants) c = t < 2 ? ROCK : desert;
+        else if (e < sea) {
+          // Corals grow in patches along warm coasts; past about 30 °C they bleach. Drawn speckled.
+          const temp = localTemp(sin2, 0), coral = feat.reefs && e > sea - 0.025 && moistRank[i] > 0.5 && temp >= 18;
+          c = coral && (u + v) % 2 ? (temp > 30 ? BLEACHED : REEF) : shallow;
+          shallowArea += area;
+          if (coral) zone[temp > 30 ? 'bleached' : 'reef'] += area;
+        } else if (e > sea + 0.14 - 0.08 * mountains) c = MOUNTAIN;
         else {
           // How much wetter than needed the ground is: moist noise, nearby water and rain against the heat.
           const temp = localTemp(sin2, e - sea);
           const wet = 0.45 * moistRank[i] + 0.4 * (1 - Math.min(12, shoreDist[i]) / 12) + 0.3 * feat.rain + band - dryLimit(temp);
-          if (temp < -2) c = wet > 0 ? TUNDRA : ROCK;
+          landArea += area;
+          zone[temp < -2 ? 'cold' : wet > 0.15 ? 'wet' : wet > 0 ? 'moist' : 'dry'] += area;
+          if (freshDist[i] <= 2 && temp > 0) zone.fresh += area;
+          if (!plants) c = t < 2 ? ROCK : desert;
+          else if (temp < -2) c = wet > 0 ? TUNDRA : ROCK;
           else if (feat.wetlands && freshDist[i] <= 2 && temp > 0) c = WETLAND;
           else if ((feat.forests && wet > 0.15 && temp < 35) || (veg > 0.6 && wet > 0.3)) c = FOREST;
           else if (wet > 0.25 * (1 - veg)) c = GRASS;
           else if (feat.grass && wet > -0.08) c = SAVANNA;
           else c = SAND;
-          landArea += area;
-          if (c === SAND) count.desert += area;
-          else if (c !== ROCK) count.green += area;
-          if (c === GRASS || c === SAVANNA) count.grass += area;
-          if (c === FOREST) count.forest += area;
-          if (c === WETLAND) count.wetland += area;
+          if (plants) {
+            if (c === SAND) count.desert += area;
+            else if (c !== ROCK) count.green += area;
+            if (c === GRASS || c === SAVANNA) count.grass += area;
+            if (c === FOREST) count.forest += area;
+            if (c === WETLAND) count.wetland += area;
+          }
         }
         texColors[i * 3] = pack(c, 1.18 * light);
         texColors[i * 3 + 1] = pack(c, light);
         texColors[i * 3 + 2] = pack(c, 0.68 * light);
       }
     }
-    for (const k in count) count[k] = landArea ? count[k] / landArea : 0;
+    const share = (n, total) => (total ? n / total : 0);
+    for (const k in count) count[k] = share(count[k], landArea);
+    for (const k in zone) zone[k] = share(zone[k], k === 'reef' || k === 'bleached' ? shallowArea : landArea);
     biomes = count;
+    zones = zone;
   }
 
   function updateSky(t) {
@@ -1298,6 +1316,10 @@ const Scene = (() => {
     // Share of the land (outside ice and mountains) in each biome: desert, green, grass, forest, wetland.
     biomes() {
       return biomes;
+    },
+    // Share of the land in each climate zone, and of the shallows in reefs.
+    zones() {
+      return zones;
     },
     // How many lakes are on the planet now.
     // Screen positions of the volcanoes in view (for tests).
