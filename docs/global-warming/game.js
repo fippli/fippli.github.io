@@ -224,6 +224,7 @@ const SPECIES = [
   { id: 'reptile', icon: 'frog', domain: 'ground', parent: 'amphibian', name: 'Reptiles', desc: 'Eggs with shells. No more ponds needed.', cost: 100000, dna: 200, temp: [12, 38], home: ['moist', 'dry'] },
   { id: 'flyer', icon: 'fly', domain: 'atmosphere', parent: 'insect', name: 'Flying Insects', desc: 'The first wings on the planet.', cost: 60000, dna: 150, temp: [10, 38], home: ['wet', 'moist'] },
 ];
+const MICROBES = new Set(['cell', 'cyano', 'plankton']);
 const SPECIES_BY_ID = Object.fromEntries(SPECIES.map(s => [s.id, s]));
 // Step a habitat needs before its species can evolve. Flyers only need land; evolving one opens step 8.
 const DOMAIN_STEP = { ocean: 6, ground: 7, atmosphere: 7 };
@@ -1325,6 +1326,9 @@ function updateScene(c) {
   const storms = state.step >= 4 ? Math.min(3, 1 + Math.floor((state.clouds - STORM_CLOUDS) * 10)) : 0;
   Scene.setClouds(has('clouds') ? state.clouds : 0, Math.max(0, storms));
   Scene.setLife(clamp01(rates.green), clamp01(rates.life / 6), ozone());
+  // Every living species shows on the map, up to three of each; microbes are too small to see.
+  Scene.setCritters(SPECIES.filter(s => state.species[s.id] > 0.05 && !MICROBES.has(s.id))
+    .map(s => ({ id: s.id, sprite: s.icon, home: s.home || ['sea'], n: Math.ceil(state.species[s.id] * 3) })));
 }
 
 let last = performance.now();

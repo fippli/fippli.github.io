@@ -82,6 +82,12 @@ const Scene = (() => {
   // Climate zones of the land, whether or not anything grows there yet (shares of land outside ice and
   // mountains): cold, wet, moist, dry, and fresh (next to rivers and lakes). Reef and bleached are shares of the shallows.
   let zones = { cold: 0, wet: 0, moist: 0, dry: 0, fresh: 0, reef: 0, bleached: 0 };
+  // Living things stand on the map in their home zones: each texel's zones as bits, and per species its
+  // sprite, zone mask, how many it shows and the texture spots they stand on.
+  const ZONE_BIT = { cold: 1, wet: 2, moist: 4, dry: 8, fresh: 16, sea: 32, reef: 64 };
+  const CRITTER_GAP = 5;
+  const MOVES = { fly: 'fly', fish: 'swim', jelly: 'swim', worm: 'swim', frog: 'hop', bug: 'hop' };
+  let zoneMap = new Uint8Array(TEX_W * TEX_H), critters = new Map(), critterKey = '';
   let clouds = [], cloudCover = 0, storms = 0;
   let particles = [], bolts = [];
   let sunPress = 0, comet = null, spinLevel = 0, drag = null;
@@ -260,24 +266,32 @@ const Scene = (() => {
       const band = 0.25 * Math.exp(-((lat / 10) ** 2)) - 0.4 * Math.exp(-(((lat - 27) / 9) ** 2));
       for (let u = 0; u < TEX_W; u++) {
         const i = v * TEX_W + u, e = elev[i];
-        let c;
+        let c, bits = 0;
         if (lat + (e - seaThreshold) * 60 > limit) c = e < sea ? SEA_ICE : LAND_ICE;
         else if (water[i] && e >= sea) c = feat.frozen ? SEA_ICE : water[i] === 2 ? LAKE : RIVER;
-        else if (e < sea - 0.06) c = deep;
-        else if (e < sea) {
+        else if (e < sea - 0.06) {
+          c = deep;
+          bits = ZONE_BIT.sea;
+        } else if (e < sea) {
           // Corals grow in patches along warm coasts; past about 30 °C they bleach. Drawn speckled.
           const temp = localTemp(sin2, 0), coral = feat.reefs && e > sea - 0.025 && moistRank[i] > 0.5 && temp >= 18;
           c = coral && (u + v) % 2 ? (temp > 30 ? BLEACHED : REEF) : shallow;
           shallowArea += area;
           if (coral) zone[temp > 30 ? 'bleached' : 'reef'] += area;
+          bits = ZONE_BIT.sea | (coral && temp <= 30 ? ZONE_BIT.reef : 0);
         } else if (e > sea + 0.14 - 0.08 * mountains) c = MOUNTAIN;
         else {
           // How much wetter than needed the ground is: moist noise, nearby water and rain against the heat.
           const temp = localTemp(sin2, e - sea);
           const wet = 0.45 * moistRank[i] + 0.4 * (1 - Math.min(12, shoreDist[i]) / 12) + 0.3 * feat.rain + band - dryLimit(temp);
           landArea += area;
-          zone[temp < -2 ? 'cold' : wet > 0.15 ? 'wet' : wet > 0 ? 'moist' : 'dry'] += area;
-          if (freshDist[i] <= 2 && temp > 0) zone.fresh += area;
+          const z = temp < -2 ? 'cold' : wet > 0.15 ? 'wet' : wet > 0 ? 'moist' : 'dry';
+          zone[z] += area;
+          bits = ZONE_BIT[z];
+          if (freshDist[i] <= 2 && temp > 0) {
+            zone.fresh += area;
+            bits |= ZONE_BIT.fresh;
+          }
           if (!plants) c = t < 2 ? ROCK : desert;
           else {
             c = landCover(temp, wet, freshDist[i] <= 2, veg);
@@ -286,6 +300,7 @@ const Scene = (() => {
             if (c !== SAND && c !== ROCK) count.green += area;
           }
         }
+        zoneMap[i] = bits;
         texColors[i * 3] = pack(c, 1.18 * light);
         texColors[i * 3 + 1] = pack(c, light);
         texColors[i * 3 + 2] = pack(c, 0.68 * light);
@@ -296,6 +311,37 @@ const Scene = (() => {
     for (const k in zone) zone[k] = share(zone[k], k === 'reef' || k === 'bleached' ? shallowArea : landArea);
     biomes = count;
     zones = zone;
+    placeCritters();
+  }
+
+  // Drop the critters whose ground is no longer home (frozen, dried out, flooded), then add the missing
+  // ones on home ground near the middle of the view, spaced apart, with a little randomness.
+  function placeCritters() {
+    const all = [];
+    for (const c of critters.values()) {
+      c.spots = c.spots.filter(s => zoneMap[s.v * TEX_W + s.u] & c.mask);
+      all.push(...c.spots);
+    }
+    const centre = pixU ? viewCentre() : { u: TEX_W / 2, v: TEX_H / 2 };
+    for (const c of critters.values()) {
+      if (c.spots.length >= c.n) continue;
+      const cand = [];
+      for (let v = FEATURE_BAND[0]; v < FEATURE_BAND[1]; v += 2) {
+        for (let u = (v >> 1) % 2; u < TEX_W; u += 2) {
+          const i = v * TEX_W + u;
+          if (zoneMap[i] & c.mask) cand.push({ u, v, s: texDist({ u, v }, centre) + 60 * (((i * 2654435761) >>> 0) / 2 ** 32) });
+        }
+      }
+      cand.sort((a, b) => a.s - b.s);
+      for (const s of cand) {
+        if (c.spots.length >= c.n) break;
+        if (all.every(o => texDist(o, s) >= CRITTER_GAP)) {
+          const spot = { u: s.u, v: s.v, phase: Math.random() * 6.3 };
+          c.spots.push(spot);
+          all.push(spot);
+        }
+      }
+    }
   }
 
   function updateSky(t) {
@@ -765,8 +811,25 @@ const Scene = (() => {
     }
   }
 
-  // Volcanoes and peaks stand on the map, drawn back to front at double size: they are landmarks.
-  function drawLandmarks(dt) {
+  // A sprite with a dark outline, so small critters stand out against the ground they are on.
+  const outlines = {};
+  function outlined(id) {
+    if (outlines[id]) return outlines[id];
+    const src = Sprites.canvas(id), c = document.createElement('canvas'), g = c.getContext('2d');
+    c.width = src.width + 2;
+    c.height = src.height + 2;
+    for (const [dx, dy] of NEIGHBOURS) g.drawImage(src, 1 + dx, 1 + dy);
+    g.globalCompositeOperation = 'source-in';
+    g.fillStyle = '#1a1420';
+    g.fillRect(0, 0, c.width, c.height);
+    g.globalCompositeOperation = 'source-over';
+    g.drawImage(src, 1, 1);
+    return (outlines[id] = c);
+  }
+
+  // Volcanoes and peaks stand on the map, drawn back to front at double size: they are landmarks. Critters
+  // stand among them at their own size and move a little.
+  function drawLandmarks(now, dt) {
     const marks = [];
     for (const v of volcanoes) {
       v.cool = Math.max(0, v.cool - dt);
@@ -775,12 +838,24 @@ const Scene = (() => {
     }
     for (const k of peaks) {
       const at = project(peakSpots[k]);
-      if (at) marks.push({ at, id: feat.snow ? 'peakSnow' : 'peak' });
+      if (at) marks.push({ at, id: feat.snow ? 'peakSnow' : 'peak', size: 2 });
+    }
+    const t = now / 1000;
+    for (const c of critters.values()) {
+      const move = MOVES[c.sprite];
+      for (const s of c.spots) {
+        const at = project(s);
+        if (!at) continue;
+        const k = Math.sin(t * 2 + s.phase);
+        const dx = move === 'swim' ? Math.round(k) : 0;
+        const dy = move === 'fly' ? Math.round(k * 1.5) - 5 : move === 'hop' ? -Math.round(Math.max(0, k) * 2) : 0;
+        marks.push({ at: { x: at.x + dx, y: at.y + dy }, img: outlined(c.sprite), size: 1 });
+      }
     }
     marks.sort((a, b) => a.at.y - b.at.y);
     for (const m of marks) {
-      const c = Sprites.canvas(m.id);
-      ctx.drawImage(c, m.at.x - c.width, m.at.y - c.height * 2 + 2, c.width * 2, c.height * 2);
+      const c = m.img || Sprites.canvas(m.id), w = c.width * m.size, h = c.height * m.size;
+      ctx.drawImage(c, m.at.x - Math.floor(w / 2), m.at.y - h + m.size, w, h);
     }
   }
 
@@ -961,7 +1036,7 @@ const Scene = (() => {
       ctx.restore();
     }
     drawBolts(dt);
-    drawLandmarks(dt);
+    drawLandmarks(now, dt);
     drawComet(dt);
     drawParticles(dt);
   }
@@ -1230,6 +1305,17 @@ const Scene = (() => {
       if (climate !== null) updateTexture(climate);
       lastBg = -1e9;
     },
+    // The living species to show on the map: [{id, sprite, home: zone names, n: how many}].
+    setCritters(list) {
+      const key = list.map(s => `${s.id}:${s.n}`).join();
+      if (key === critterKey) return;
+      critterKey = key;
+      critters = new Map(list.map(s => {
+        const old = critters.get(s.id);
+        return [s.id, { sprite: s.sprite, mask: s.home.reduce((m, k) => m | ZONE_BIT[k], 0), n: s.n, spots: old ? old.spots.slice(0, s.n) : [] }];
+      }));
+      placeCritters();
+    },
     // Share of the land (outside ice and mountains) in each biome: desert, green, grass, forest, wetland.
     biomes() {
       return biomes;
@@ -1240,6 +1326,9 @@ const Scene = (() => {
     },
     // How many lakes are on the planet now.
     // Screen positions of the volcanoes in view (for tests).
+    critterCount() {
+      return [...critters.values()].reduce((n, c) => n + c.spots.length, 0);
+    },
     volcanoPoints() {
       return volcanoes.map(v => v.at && { x: v.at.x * P, y: v.at.y * P });
     },
