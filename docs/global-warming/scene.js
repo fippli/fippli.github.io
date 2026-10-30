@@ -13,7 +13,6 @@ const Scene = (() => {
   const AIR_TAP_PX = 24;                     // minimum height of the tappable air above the planet
   const SPIN_SECONDS = 150;
   const MAX_CLOUDS = 8;
-  const SMOKY = new Set(['campfire', 'oil', 'suv', 'coal', 'factory', 'rig', 'cargo', 'permafrost']);
 
   const RAMPS = {
     deep: [[-59, '#1b3566'], [0, '#1d4f9a'], [6, '#1f5a6a'], [12, '#3a4a3a'], [20, '#4a2418']],
@@ -29,7 +28,6 @@ const Scene = (() => {
   const FOREST = hex('#2f7a3a');
   const LAND_ICE = hex('#f4fbff');
   const SEA_ICE = hex('#d4e8f6');
-  const SMOG = hex('#6a5a48');
   const BLOOM = hex('#1f7a5a');
   const OZONE = hex('#b49cff');
   const HAZE = hex('#d88a3a');
@@ -61,9 +59,9 @@ const Scene = (() => {
   // Camera for the opening: zoom 0 = close on a giant sun, 1 = normal layout with the planet in view.
   let zoom = 1, zoomTarget = 1, zoomSet = false, camY = 0, sunBg = false, layout = {};
   let moon = { visible: false, wake: 0, bg: false, cur: null, fling: 0 }, moonBody = null, moonKey = null;
-  let bgImage, bgPixels, pixU, pixV, pixShade, pixAlt, pixDither, stars = [], slots = [];
+  let bgImage, bgPixels, pixU, pixV, pixShade, pixAlt, pixDither, stars = [];
   let skyColors = [], spaceColor = 0, atmosphere = 10;
-  let climate = null, smog = 0, spin = 0, lastBg = -1e9, currentSea = seaThreshold;
+  let climate = null, spin = 0, lastBg = -1e9, currentSea = seaThreshold;
   let landLife = 0, oceanLife = 0, ozone = 0, land = 0.3, mountains = 0, aerosols = 0;
   let iceCoverValue = 1, pressure = 0, haze = 0, sunBright = 1;
   // Volcanoes stand on the map and turn with the planet: tap a glowing one to make it erupt; it then cools for a while.
@@ -84,9 +82,8 @@ const Scene = (() => {
   // Climate zones of the land, whether or not anything grows there yet (shares of land outside ice and
   // mountains): cold, wet, moist, dry, and fresh (next to rivers and lakes). Reef and bleached are shares of the shallows.
   let zones = { cold: 0, wet: 0, moist: 0, dry: 0, fresh: 0, reef: 0, bleached: 0 };
-  let counts = {}, groundSprites = [], skySprites = [], jetCount = 0, jets = [], jetTimer = 0;
   let clouds = [], cloudCover = 0, storms = 0;
-  let particles = [], bolts = [], smokeRate = 0, smokeTimer = 0;
+  let particles = [], bolts = [];
   let sunPress = 0, comet = null, spinLevel = 0, drag = null;
   // Opening movie: 'pre' = the singularity waits for taps, 'warp' = the flight through space after the bang.
   // Day and night: once the planet spins steadily, the sun rises at 6 and sets at 18 o'clock.
@@ -227,6 +224,17 @@ const Scene = (() => {
   // Land dries out in the heat.
   const dryLimit = temp => 0.35 + 0.02 * Math.max(0, temp - 24);
 
+  // What grows on a land texel, from its local temperature, its wetness and what has been researched.
+  function landCover(temp, wet, nearFresh, veg) {
+    if (temp < -2) return wet > 0 ? TUNDRA : ROCK;
+    if (feat.wetlands && nearFresh && temp > 0) return WETLAND;
+    if ((feat.forests && wet > 0.15 && temp < 35) || (veg > 0.6 && wet > 0.3)) return FOREST;
+    if (wet > 0.25 * (1 - veg)) return GRASS;
+    if (feat.grass && wet > -0.08) return SAVANNA;
+    return SAND;
+  }
+  const BIOME_OF = new Map([[SAND, 'desert'], [GRASS, 'grass'], [SAVANNA, 'grass'], [FOREST, 'forest'], [WETLAND, 'wetland']]);
+
   function updateTexture(t) {
     const limit = iceLimit(), veg = landLife, light = surfaceLight();
     const sea = seaThreshold + (t > 0 ? Math.min(0.06, t * 0.004) : 0);
@@ -271,18 +279,11 @@ const Scene = (() => {
           zone[temp < -2 ? 'cold' : wet > 0.15 ? 'wet' : wet > 0 ? 'moist' : 'dry'] += area;
           if (freshDist[i] <= 2 && temp > 0) zone.fresh += area;
           if (!plants) c = t < 2 ? ROCK : desert;
-          else if (temp < -2) c = wet > 0 ? TUNDRA : ROCK;
-          else if (feat.wetlands && freshDist[i] <= 2 && temp > 0) c = WETLAND;
-          else if ((feat.forests && wet > 0.15 && temp < 35) || (veg > 0.6 && wet > 0.3)) c = FOREST;
-          else if (wet > 0.25 * (1 - veg)) c = GRASS;
-          else if (feat.grass && wet > -0.08) c = SAVANNA;
-          else c = SAND;
-          if (plants) {
-            if (c === SAND) count.desert += area;
-            else if (c !== ROCK) count.green += area;
-            if (c === GRASS || c === SAVANNA) count.grass += area;
-            if (c === FOREST) count.forest += area;
-            if (c === WETLAND) count.wetland += area;
+          else {
+            c = landCover(temp, wet, freshDist[i] <= 2, veg);
+            const biome = BIOME_OF.get(c);
+            if (biome) count[biome] += area;
+            if (c !== SAND && c !== ROCK) count.green += area;
           }
         }
         texColors[i * 3] = pack(c, 1.18 * light);
@@ -305,7 +306,6 @@ const Scene = (() => {
     for (let k = 0; k < SKY_BANDS; k++) {
       let c = mix(horizon, zenith, k / (SKY_BANDS - 1));
       const low = 1 - k / (SKY_BANDS * 0.4);
-      if (low > 0) c = mix(c, SMOG, smog * low * 0.8);
       if (k === SKY_BANDS - 2) c = mix(c, OZONE, ozone * 0.25); // the ozone layer, high in the sky
       c = mix(c, ASH, aerosols * 0.5);                           // eruption aerosols dim the whole sky
       skyColors.push(pack(c));
@@ -330,7 +330,6 @@ const Scene = (() => {
     R = (W * W + H * H) / (4 * H);
     cx = W / 2;
     cy = H / 2 + R;
-    // The sun sits on the right, within thumb reach, inside the same column as the UI on wide screens.
     // The sun sits on the right, within thumb reach, inside the same column as the UI on wide screens.
     const rn = Math.round(Math.min(W * 0.1, H * 0.055)), column = Math.min(vw, 520) / P;
     layout = {
@@ -358,22 +357,12 @@ const Scene = (() => {
       c: css([255, 255, 255].map(v => v * (0.5 + rand() * 0.5))),
     }));
 
-    slots = [];
-    for (let x = cx - R * 0.62; x <= cx + R * 0.62; x += 6) slots.push(Math.round(x));
-    const order = rng(11);
-    for (let i = slots.length - 1; i > 0; i--) {
-      const j = Math.floor(order() * (i + 1));
-      [slots[i], slots[j]] = [slots[j], slots[i]];
-    }
 
     clouds = Array.from({ length: MAX_CLOUDS }, () => ({
       x: rand() * W, alt: 0.3 + rand() * 0.4, w: 10 + Math.floor(rand() * 10), speed: 1.5 + rand() * 3,
     }));
 
-    if (climate !== null) {
-      updateSky(climate);
-      layoutSprites();
-    }
+    if (climate !== null) updateSky(climate);
     lastBg = -1e9;
   }
 
@@ -535,33 +524,6 @@ const Scene = (() => {
     if (nz < 0.12) return null;
     const p = { x: Math.round(cx + nx * R), y: Math.round(cy - ny * R + camY) };
     return p.y > H + 4 ? null : p;
-  }
-
-  function layoutSprites() {
-    groundSprites = [];
-    skySprites = [];
-    jetCount = 0;
-    let slot = 0;
-    for (const [id, n] of Object.entries(counts)) {
-      if (!n || !SPRITES[id]) continue;
-      const shown = Math.min(3, 1 + Math.floor(Math.log10(n)));
-      if (id === 'jet') jetCount = shown;
-      else if (id === 'mirror') {
-        const spots = [[0.12, 0.2], [0.88, 0.22], [0.22, 0.12], [0.78, 0.1], [0.05, 0.3]];
-        for (let k = 0; k < Math.min(spots.length, shown + 2); k++) skySprites.push({ id, x: W * spots[k][0], y: H * spots[k][1] });
-      } else {
-        for (let k = 0; k < shown && slot < slots.length; k++) groundSprites.push({ id, x: slots[slot++] });
-      }
-    }
-    const free = slots.length - slot;
-    const trees = Math.round(free * Math.max(0, landLife - 0.4) / 0.6 / (1 + (counts.forest || 0) / 5));
-    for (let k = 0; k < trees; k++) groundSprites.push({ id: 'tree', x: slots[slot++] });
-    for (const s of groundSprites) {
-      const c = Sprites.canvas(s.id);
-      s.dx = Math.round(s.x - c.width / 2);
-      s.dy = Math.round(surfaceY(s.x)) - c.height + 1;
-    }
-    groundSprites.sort((a, b) => a.x - b.x);
   }
 
   /* ---------- drawing ---------- */
@@ -754,7 +716,7 @@ const Scene = (() => {
   }
 
   function drawClouds(now, dt) {
-    const white = css(mix([245, 248, 255], SMOG, smog * 0.7)), whiteShade = css(mix([200, 210, 225], SMOG, smog * 0.7));
+    const white = css([245, 248, 255]), whiteShade = css([200, 210, 225]);
     for (const v of visibleClouds()) {
       v.cloud.x = (v.cloud.x + v.cloud.speed * dt) % (W + v.w);
       const { x, y, w, storm } = v;
@@ -803,27 +765,8 @@ const Scene = (() => {
     }
   }
 
-  function drawSprites(now, dt) {
-    for (const s of skySprites) {
-      if (Math.floor(now / 400 + s.x) % 7 === 0) continue; // twinkle
-      ctx.drawImage(Sprites.canvas(s.id), Math.round(s.x), Math.round(s.y));
-    }
-    if (jetCount) {
-      jetTimer -= dt;
-      if (jetTimer <= 0) {
-        jetTimer = 8 / jetCount;
-        jets.push({ x: -10, y: Math.round(Math.max(H * 0.2, H / 2 - atmosphere * (0.4 + Math.random() * 0.3))) });
-      }
-    }
-    const jet = Sprites.canvas('jet');
-    jets = jets.filter(j => j.x < W + 10);
-    for (const j of jets) {
-      j.x += 30 * dt;
-      ctx.drawImage(jet, Math.round(j.x), j.y);
-      if (Math.random() < 0.6) particles.push({ x: j.x, y: j.y + 2, vx: 0, vy: 0, life: 1.5, max: 1.5, size: 1, color: '#e8eef8' });
-    }
-    for (const s of groundSprites) ctx.drawImage(Sprites.canvas(s.id), s.dx, s.dy + camY);
-    // Volcanoes and peaks stand on the map, drawn back to front at double size: they are landmarks.
+  // Volcanoes and peaks stand on the map, drawn back to front at double size: they are landmarks.
+  function drawLandmarks(dt) {
     const marks = [];
     for (const v of volcanoes) {
       v.cool = Math.max(0, v.cool - dt);
@@ -856,22 +799,6 @@ const Scene = (() => {
     ctx.fillRect(Math.round(comet.x) - 1, Math.round(comet.y) - 1, 3, 3);
     ctx.fillStyle = '#bfe8ff';
     ctx.fillRect(Math.round(comet.x) - 2, Math.round(comet.y), 1, 1);
-  }
-
-  function emitSmoke(dt) {
-    if (!smokeRate) return;
-    const sources = groundSprites.filter(s => SMOKY.has(s.id));
-    if (!sources.length) return;
-    smokeTimer += dt * smokeRate;
-    const grey = Math.round(150 - smog * 70);
-    while (smokeTimer > 1) {
-      smokeTimer -= 1;
-      const s = sources[Math.floor(Math.random() * sources.length)];
-      particles.push({
-        x: s.dx + Math.random() * 4, y: s.dy, vx: 1 + Math.random() * 3, vy: -(3 + Math.random() * 4),
-        life: 3, max: 3, size: Math.random() < 0.5 ? 1 : 2, color: `rgb(${grey},${grey - 6},${grey - 12})`,
-      });
-    }
   }
 
   function drawParticles(dt) {
@@ -1034,9 +961,8 @@ const Scene = (() => {
       ctx.restore();
     }
     drawBolts(dt);
-    drawSprites(now, dt);
+    drawLandmarks(dt);
     drawComet(dt);
-    emitSmoke(dt);
     drawParticles(dt);
   }
 
@@ -1163,10 +1089,7 @@ const Scene = (() => {
       oceanLife = ocean;
       ozone = oz;
       if (climate === null) return;
-      if (changed) {
-        updateTexture(climate);
-        layoutSprites();
-      }
+      if (changed) updateTexture(climate);
       updateSky(climate);
       lastBg = -1e9;
     },
@@ -1197,12 +1120,6 @@ const Scene = (() => {
     autoStrike() {
       const storm = visibleClouds().find(v => v.storm);
       return storm ? strike(storm) : null;
-    },
-    setIndustry(buildingCounts, perSecond) {
-      const changed = Object.keys({ ...buildingCounts, ...counts }).some(k => buildingCounts[k] !== counts[k]);
-      counts = { ...buildingCounts };
-      if (changed) layoutSprites();
-      smokeRate = Math.min(12, Math.log10(perSecond + 1) * 2);
     },
     // Two hydrogen nuclei collide inside the sun and flash into helium.
     fusion() {

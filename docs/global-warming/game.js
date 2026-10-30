@@ -86,12 +86,6 @@ const ASH_LIFE_S = 120;
 // learns what it does by watching it move as the rest of the planet changes.
 const logLevel = (v, max) => clamp01(Math.log10(1 + Math.max(0, v)) / Math.log10(1 + max));
 const sunGauge = () => [sunBrightness(), `${pct(sunBrightness())} of today · ${state.sunAge.toFixed(1)} Gyr old`];
-// Wetlands rot plants without oxygen and give off methane, more in the warmth.
-const wetlandMethane = () => (has('wetlands') ? 0.04 * clamp01(tempC() / 15) : 0);
-// Snow on the peaks: glaciers grow on high mountains while the planet is cool enough.
-const glacierIce = () => (has('glaciers') ? clamp01((30 - tempC()) / 30) * Math.min(1, state.mountains * 2) : 0);
-// Water running down the rivers: glacier melt and rain, none while frozen.
-const riverFlow = () => (has('rivers') ? clamp01(tempC() / 15) * clamp01(0.4 + state.clouds) : 0);
 const volcanoGauge = () => [clamp01(rates.co2 / 200), `+${fmt(rates.co2)} ppm CO₂/s · ${pct(state.land)} land`];
 const soupGauge = () => [clamp01(soupMult() / 12), `x${soupMult().toFixed(1)} soup per strike`];
 const rainGauge = () => [logLevel(state.minerals, 1e4), `${fmt(state.minerals)} minerals · +${fmt(mult('rainMult'))} per drop`];
@@ -379,6 +373,12 @@ const iceCover = () => state.ice;
 const openOcean = () => (1 - state.land) * (1 - iceCover());
 const ozone = () => clamp01(state.o2 / 2);   // ozone forms as O2 approaches 2%
 const volcanoes = () => best('volcanoes') * state.volcanoActivity;
+// Snow on the peaks: glaciers grow on high mountains while the planet is cool enough.
+const glacierIce = () => (has('glaciers') ? clamp01((30 - tempC()) / 30) * Math.min(1, state.mountains * 2) : 0);
+// Water running down the rivers: glacier melt and rain, none while frozen.
+const riverFlow = () => (has('rivers') ? clamp01(tempC() / 15) * clamp01(0.4 + state.clouds) : 0);
+// Wetlands rot plants without oxygen and give off methane, more in the warmth.
+const wetlandMethane = () => (has('wetlands') ? 0.04 * clamp01(tempC() / 15) : 0);
 
 // Warming (K) from one greenhouse gas in thin air. The air pressure and water vapor amplify it in climate().
 const gasWarming = gas => (gas === 'co2' ? 3.3 * log2(1 + state.co2 / 10) : 2 * log2(1 + state.ch4 / 0.5));
@@ -731,7 +731,7 @@ function renderTab(tab, force = false) {
         <div class="info"><div class="name"></div><div class="desc"></div><div class="meta"></div></div>
         <div class="side"><div class="count"></div><div class="cost"></div></div>`;
       if (e.kind === 'researched') li.querySelector('.meta').innerHTML = '<div class="meter"><i></i></div><span></span>';
-      else li.addEventListener('click', () => buy(e));
+      else li.addEventListener('click', () => choose(e));
       e.li = li;
       list.appendChild(li);
     }
@@ -844,9 +844,9 @@ function updateTab(tab, root) {
   }
 }
 
-/* ================= Buying ================= */
+/* ================= Researching and evolving ================= */
 
-function buy(e) {
+function choose(e) {
   const { item } = e;
   if (e.kind === 'researched') return;
   if (e.kind === 'research') {
@@ -862,7 +862,7 @@ function buy(e) {
   renderCategory();
 }
 
-/* ================= Rail and panels ================= */
+/* ================= Panels ================= */
 
 let currentCat = 'geology';
 
@@ -990,7 +990,7 @@ function renderLife() {
     <ul class="tree">${lifeNode(SPECIES[0])}</ul>`;
   $('#panel').scrollTop = scroll;
   root.querySelectorAll('.node.available').forEach(n => n.addEventListener('click', () => {
-    buy({ kind: 'species', item: SPECIES_BY_ID[n.dataset.id] });
+    choose({ kind: 'species', item: SPECIES_BY_ID[n.dataset.id] });
     renderLife();
   }));
 }
