@@ -2,7 +2,10 @@
 
 /* ================= Config ================= */
 
-const SAVE_KEY = 'global-warming-save-v7';
+// The beta keeps its own save, so a newer save format never reaches the stable game.
+const STABLE_SAVE_KEY = 'global-warming-save-v7';
+const SAVE_KEY = CHANNEL === 'beta' ? 'phylarium-beta-save' : STABLE_SAVE_KEY;
+const SAVE_VERSION = 1;          // bump with a new step in MIGRATIONS when old saves need fixing
 const OFFLINE_RATE = 0.5;          // fraction of production earned while away
 const OFFLINE_CAP_S = 12 * 3600;   // max offline time counted
 const KELVIN = 273.15;
@@ -255,6 +258,7 @@ const speciesTab = s => (s.domain === 'atmosphere' && !seen('flight') ? 'landlif
 /* ================= State ================= */
 
 const freshState = () => ({
+  saveVersion: SAVE_VERSION,
   happened: [],     // EVENTS that have happened, in order
   sunAge: 0,        // billion years since the sun ignited
   tempK: CORE_K,
@@ -305,6 +309,31 @@ let warpSpeed = WARP_START;
 // The opening movie runs until the flight after the Big Bang ends; the planet waits.
 const inCinema = () => !state.banged || movieP !== null;
 
+// Steps that bring an old save up to SAVE_VERSION, run in order from the save's version.
+// Never edit a step that has been released; add a new one.
+const MIGRATIONS = [
+  // 0 to 1: saves from before save versions.
+  s => {
+    // Saves from before the Big Bang opening skip it.
+    if (s.banged === undefined) s.banged = true;
+    // Saves from when the events were numbered steps.
+    if (s.step !== undefined && !s.happened) s.happened = EVENTS.slice(0, s.step).map(e => e.id);
+    delete s.step;
+    // Saves from when the spin made the magnetic field directly: keep the field, lock the spin.
+    if (s.dynamo && !s.spinLocked) {
+      s.spinLocked = true;
+      s.spin = 1;
+      s.upgrades = [...new Set([...(s.upgrades || []), 'magnet'])];
+    }
+  },
+];
+
+function migrate(saved) {
+  for (let v = saved.saveVersion || 0; v < SAVE_VERSION; v++) MIGRATIONS[v](saved);
+  saved.saveVersion = SAVE_VERSION;
+  return saved;
+}
+
 function load() {
   // Open the game with ?reset to start over with a fresh save.
   const params = new URLSearchParams(location.search);
@@ -313,21 +342,9 @@ function load() {
     history.replaceState(null, '', location.pathname);
   }
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (raw) {
-      const saved = JSON.parse(raw);
-      // Saves from before the Big Bang opening skip it.
-      state = { ...freshState(), banged: true, ...saved };
-      // Saves from when the events were numbered steps.
-      if (saved.step !== undefined && !saved.happened) state.happened = EVENTS.slice(0, saved.step).map(e => e.id);
-      delete state.step;
-      // Saves from when the spin made the magnetic field directly: keep the field, lock the spin.
-      if (saved.dynamo && !saved.spinLocked) {
-        state.spinLocked = true;
-        state.spin = 1;
-        state.upgrades = [...new Set([...(state.upgrades || []), 'magnet'])];
-      }
-    }
+    // A new beta player starts from their stable save.
+    const raw = localStorage.getItem(SAVE_KEY) || (SAVE_KEY !== STABLE_SAVE_KEY && localStorage.getItem(STABLE_SAVE_KEY));
+    if (raw) state = { ...freshState(), ...migrate(JSON.parse(raw)) };
   } catch (e) {
     console.warn('Save load failed', e);
   }
@@ -1255,6 +1272,12 @@ function newGame() {
 
 $('#gameover-restart').addEventListener('click', newGame);
 
+$('#version').textContent = `Phylarium ${VERSION}${CHANNEL === 'stable' ? '' : ' ' + CHANNEL}`;
+$('#update').addEventListener('click', () => {
+  save();
+  location.reload();
+});
+
 /* ================= Offline progress ================= */
 
 function applyOffline() {
@@ -1432,7 +1455,14 @@ requestAnimationFrame(frame);
 const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
 if ('serviceWorker' in navigator) {
   if (location.protocol === 'https:' && !isLocal) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // A new version takes over at once; offer a reload instead of swapping the game under the player.
+    const hadWorker = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadWorker) $('#update').classList.remove('hidden');
+    });
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      setInterval(() => !document.hidden && reg.update(), 30 * 60 * 1000);
+    }).catch(() => {});
   } else {
     navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
     window.caches?.keys().then(keys => keys.forEach(k => caches.delete(k)));

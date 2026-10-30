@@ -11,6 +11,7 @@
   <title>Phylarium</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
@@ -36,6 +37,7 @@
           <h3>Planet</h3>
           <dl id="stats" class="stats"></dl>
           <button id="reset" class="danger">Reset game</button>
+          <p id="version" class="version"></p>
         </div>
       </main>
         </section>
@@ -52,8 +54,11 @@
     </div>
   </div>
 
+  <button id="update" class="update hidden">New version ready · tap to reload</button>
+
   <div id="fx"></div>
 
+  <script src="version.js"></script>
   <script src="sprites.js"></script>
   <script src="terrain.js"></script>
   <script src="scene.js"></script>
