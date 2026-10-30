@@ -159,7 +159,7 @@ const RESEARCH = [
   { id: 'rivers', icon: 'wave', tab: 'land', step: 2, requires: ['glaciers'], needs: [['temp', 1], ['done', 'rain']], days: 2, name: 'Rivers',
     gauge: () => [riverFlow(), riverFlow() > 0 ? `${pct(riverFlow())} flow` : 'frozen'] },
   { id: 'lakes', icon: 'wave', tab: 'land', step: 2, requires: ['rivers'], needs: [['mountains', 40]], days: 2, name: 'Lakes', dnaMult: { ground: 1.5 },
-    gauge: () => [clamp01(Scene.lakeCount() / 12), `${Scene.lakeCount()} lakes`] },
+    gauge: () => [clamp01(Terrain.lakeCount() / 12), `${Terrain.lakeCount()} lakes`] },
   // Ocean
   { id: 'currents', icon: 'wave', tab: 'ocean', step: 2, needs: [['water', 20], ['done', 'thawN2']], days: 1, name: 'Ocean Currents', iceShift: 4, gauge: () => [1 - state.ice, `${pct(state.ice)} ice`] },
   { id: 'vents', icon: 'vent', tab: 'ocean', step: 2, needs: [['water', 10], ['done', 'plates']], days: 1, name: 'Hydrothermal Vents', minerals: 1, ch4: 0.025, gauge: () => [logLevel(state.minerals, 1e4), `${fmt(state.minerals)} minerals`] },
@@ -170,17 +170,17 @@ const RESEARCH = [
     gauge: () => { const n = SPECIES.filter(sp => evolved(sp.id)).length; return [n / SPECIES.length, `${n} species alive`]; } },
   // Life
   { id: 'shallows', icon: 'wave', tab: 'oceanlife', step: 6, needs: [['species', 5], ['done', 'collision']], days: 2, name: 'Shallow Seas', dnaMult: { ocean: 2 },
-    gauge: () => [Scene.zones().reef, `${pct(Scene.zones().reef)} reef${Scene.zones().bleached > 0.005 ? ` · ${pct(Scene.zones().bleached)} bleached` : ''}`] },
+    gauge: () => [Terrain.zones().reef, `${pct(Terrain.zones().reef)} reef${Terrain.zones().bleached > 0.005 ? ` · ${pct(Terrain.zones().bleached)} bleached` : ''}`] },
   { id: 'soil', icon: 'plant', tab: 'landlife', step: 7, needs: [['plants', 1], ['done', 'rivers']], days: 2, name: 'Soil', dnaMult: { ground: 2 },
-    gauge: () => [Scene.biomes().green, `${pct(Scene.biomes().green)} green · ${pct(Scene.biomes().desert)} desert`] },
+    gauge: () => [Terrain.biomes().green, `${pct(Terrain.biomes().green)} green · ${pct(Terrain.biomes().desert)} desert`] },
   // Biomes: where each can grow depends on the local climate, so they shift as the planet warms or cools.
   // Deserts spread in the heat and cut land life.
   { id: 'grass', icon: 'plant', tab: 'landlife', step: 7, requires: ['soil'], needs: [['plants', 2]], days: 2, name: 'Grasslands', dnaMult: { ground: 1.5 },
-    gauge: () => [Scene.biomes().grass, `${pct(Scene.biomes().grass)} grassland · ${pct(Scene.biomes().desert)} desert`] },
+    gauge: () => [Terrain.biomes().grass, `${pct(Terrain.biomes().grass)} grassland · ${pct(Terrain.biomes().desert)} desert`] },
   { id: 'forests', icon: 'tree', tab: 'landlife', step: 7, requires: ['soil'], needs: [['plants', 3]], days: 3, name: 'Forests', dnaMult: { ground: 1.5 },
-    gauge: () => [Scene.biomes().forest, `${pct(Scene.biomes().forest)} forest`] },
+    gauge: () => [Terrain.biomes().forest, `${pct(Terrain.biomes().forest)} forest`] },
   { id: 'wetlands', icon: 'plant', tab: 'landlife', step: 7, requires: ['soil'], needs: [['done', 'lakes'], ['temp', 5]], days: 2, name: 'Wetlands', dnaMult: { ground: 1.5 },
-    gauge: () => [clamp01(Scene.biomes().wetland * 10), `${pct(Scene.biomes().wetland)} wetland · +${wetlandMethane().toFixed(2)} ppm CH₄/s`] },
+    gauge: () => [clamp01(Terrain.biomes().wetland * 10), `${pct(Terrain.biomes().wetland)} wetland · +${wetlandMethane().toFixed(2)} ppm CH₄/s`] },
 ];
 const RESEARCH_BY_ID = Object.fromEntries(RESEARCH.map(r => [r.id, r]));
 // The opening: tap the singularity until it bangs, then fly through 9.2 billion years of space
@@ -200,7 +200,7 @@ const IGNITION_DECAY = 0.08;    // ignition lost per second while not tapping
 
 // The tree of life for this slice. Habitat (domain) decides which step a species needs.
 // dna and o2 are per second at full population. temp is the global mean range (°C) the species can live in.
-// home lists the climate zones a land species lives in (see Scene.zones); its population can only fill
+// home lists the climate zones a land species lives in (see Terrain.zones); its population can only fill
 // as much as those zones allow, so spreading deserts or ice push it back.
 const SPECIES = [
   { id: 'cell', icon: 'cell', domain: 'ocean', name: 'First Cell', desc: 'A blob of chemistry that copies itself.', dna: 0.5, temp: [0, 80] },
@@ -402,7 +402,7 @@ function climate() {
   // Methane haze without oxygen reflects sunlight too (like Titan's haze). So do eruption aerosols and snowy peaks.
   const albedo = 0.22 + 0.43 * ice * (1 - 0.5 * dust) + 0.08 * state.clouds + 0.1 * methaneHaze()
     + 0.2 * state.aerosols + 0.03 * state.mountains + 0.02 * glacierIce()
-    + state.land * (0.15 * Scene.biomes().desert - 0.08 * Scene.biomes().forest);   // bright sand, dark forest
+    + state.land * (0.15 * Terrain.biomes().desert - 0.08 * Terrain.biomes().forest);   // bright sand, dark forest
   const sunK = 255 * Math.pow(Math.max(0, sunBrightness() * (1 - albedo) / 0.7), 0.25);
   const bare = Math.pow(sunK ** 4 + CORE_K ** 4, 0.25);
   // Greenhouse: each doubling of CO2 adds a few degrees; thin air holds less heat; water vapor amplifies it.
@@ -428,7 +428,7 @@ function recalc() {
     const p = pop(s.id);
     if (p < 0) continue;
     let dnaMult = RESEARCH.reduce((m, u) => (has(u.id) && u.dnaMult ? m * (u.dnaMult[s.domain] ?? u.dnaMult.all ?? 1) : m), 1);
-    if (s.domain === 'ground') dnaMult *= 1 - 0.7 * Scene.biomes().desert;   // little lives in the desert
+    if (s.domain === 'ground') dnaMult *= 1 - 0.7 * Terrain.biomes().desert;   // little lives in the desert
     r.dna += s.dna * p * dnaMult;
     r.dnaBy[s.domain] += s.dna * p * dnaMult;
     r.o2 += (s.o2 || 0) * p;
@@ -442,7 +442,7 @@ function recalc() {
 // How much of a full population the habitat holds (0..1): 60% of the land in its zones is plenty.
 function habitat(s) {
   if (!s.home) return 1;
-  const z = Scene.zones();
+  const z = Terrain.zones();
   return clamp01(s.home.reduce((n, k) => n + z[k], 0) / 0.6);
 }
 
@@ -515,7 +515,7 @@ function simulate(dt) {
   const c = tempC(), open = 1 - iceCover();
   // Weathering speeds up sharply in the heat, with more land, and most of all on fresh mountain rock.
   const rock = state.land / BASE_LAND * (1 + 2 * state.mountains);
-  const weathering = 0.002 * state.co2 * Math.max(0, c / 15) ** 1.5 * open * rock * mult('weatherMult') * (1 + 0.5 * riverFlow()) * (1 + Scene.biomes().forest);   // roots break rock
+  const weathering = 0.002 * state.co2 * Math.max(0, c / 15) ** 1.5 * open * rock * mult('weatherMult') * (1 + 0.5 * riverFlow()) * (1 + Terrain.biomes().forest);   // roots break rock
   const photosynthesis = rates.o2 * 1500 * state.co2 / (state.co2 + 1000);   // slows when CO2 runs low
   rates.weathering = weathering;
   state.co2 = Math.max(0, state.co2 + (rates.co2 - weathering - photosynthesis) * dt);
@@ -1011,7 +1011,7 @@ function renderWorld() {
     ['Methane', `${state.ch4.toFixed(1)} ppm`],
     ['Ice cover', pct(iceCover())],
     ['Land', `${pct(state.land)} (${pct(state.mountains)} mountains)`],
-    ...(Scene.biomes().green + Scene.biomes().desert > 0 ? [['Desert', `${pct(Scene.biomes().desert)} of land`]] : []),
+    ...(Terrain.biomes().green + Terrain.biomes().desert > 0 ? [['Desert', `${pct(Terrain.biomes().desert)} of land`]] : []),
     ['Open ocean', pct(openOcean())],
     ['Eruption aerosols', pct(state.aerosols)],
     ['Clouds', pct(state.clouds)],
