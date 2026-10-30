@@ -119,6 +119,14 @@ const needMet = ([kind, v]) => (NEEDS[kind].met ? NEEDS[kind].met(v) : NEEDS[kin
 // A node appears once everything in `requires` is researched and the step is reached. It can be researched
 // once every condition in `needs` holds; the player chooses when. Research takes `days` game days, and only one
 // node is researched at a time, so the player picks an order. `replaces` hides the earlier node of a chain.
+//
+// What a node does once researched is all on the node. A field is a number, or a function of the planet now:
+//   sun, volcanoes, eruptionSize, lightning   the highest among researched nodes wins
+//   minerals, ch4, cloudRate, albedo, iceShift   added up (per second, or share of sunlight, or °C)
+//   cloudMult, rainMult, boltMult, weatherMult, dieOff   multiplied together
+//   dnaMult      DNA multiplier per domain ({ ocean, ground, atmosphere } or { all })
+//   tick(dt)     changes the planet every frame (gases build up, mountains rise)
+// The features a node puts on the map are set in updateScene.
 const RESEARCH = [
   // Sun: it brightens as it ages, as the real sun did (70% of today's light at birth).
   { id: 'sun1', icon: 'sunicon', tab: 'sun', step: 1, needs: [['sunAge', 0.5]], days: 1, name: 'Sunlight', sun: 0.78, gauge: sunGauge },
@@ -127,19 +135,21 @@ const RESEARCH = [
   { id: 'sun4', icon: 'sunicon', tab: 'sun', step: 1, requires: ['sun3'], replaces: 'sun3', needs: [['sunAge', 4.5]], days: 1, name: 'Mature Sun', sun: 1, gauge: sunGauge },
   { id: 'uv', icon: 'sunicon', tab: 'sun', step: 5, needs: [['species', 3], ['done', 'sun2']], days: 1, name: 'Ultraviolet', dnaMult: { all: 1.25 }, gauge: () => [logLevel(rates.dna, 1000), `${fmt(rates.dna)} DNA/s`] },
   // Atmosphere: each frozen gas can thaw at its real melting or boiling point.
-  { id: 'thawN2', icon: 'cloud', tab: 'atmosphere', step: 0, needs: [['temp', -210]], days: 0.5, name: 'Nitrogen', thaw: 'n2', gauge: () => [state.pressure, `${state.pressure.toFixed(2)} bar`] },
-  { id: 'thawCH4', icon: 'cloud', tab: 'atmosphere', step: 0, needs: [['temp', -161]], days: 0.5, name: 'Methane', thaw: 'ch4', gauge: () => [logLevel(state.ch4, 30), `${state.ch4.toFixed(1)} ppm · +${gasWarming('ch4').toFixed(0)}°C`] },
-  { id: 'thawCO2', icon: 'cloud', tab: 'atmosphere', step: 0, needs: [['temp', -78]], days: 1, name: 'Carbon Dioxide', thaw: 'co2', gauge: () => [logLevel(state.co2, 1e5), `${fmt(state.co2)} ppm · +${gasWarming('co2').toFixed(0)}°C`] },
+  { id: 'thawN2', icon: 'cloud', tab: 'atmosphere', step: 0, needs: [['temp', -210]], days: 0.5, name: 'Nitrogen', tick: dt => (state.pressure = Math.min(1, state.pressure + 0.08 * dt)), gauge: () => [state.pressure, `${state.pressure.toFixed(2)} bar`] },
+  { id: 'thawCH4', icon: 'cloud', tab: 'atmosphere', step: 0, needs: [['temp', -161]], days: 0.5, name: 'Methane', tick: dt => thaw('ch4', 2 * dt), gauge: () => [logLevel(state.ch4, 30), `${state.ch4.toFixed(1)} ppm · +${gasWarming('ch4').toFixed(0)}°C`] },
+  { id: 'thawCO2', icon: 'cloud', tab: 'atmosphere', step: 0, needs: [['temp', -78]], days: 1, name: 'Carbon Dioxide', tick: dt => thaw('co2', 120 * dt), gauge: () => [logLevel(state.co2, 1e5), `${fmt(state.co2)} ppm · +${gasWarming('co2').toFixed(0)}°C`] },
   // Noble gases: they react with nothing, so they do nothing to the climate. Each can exist as gas above its
   // boiling point. Helium (uranium decay) and argon (potassium decay) come out with volcanic gas; radon seeps
   // from moving crust and decays within days; neon, krypton and xenon arrive with comets and just stay.
-  { id: 'helium', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -269], ['done', 'volcano']], days: 0.5, name: 'Helium', gauge: () => [clamp01(state.he / 6), `${state.he.toFixed(2)} ppm`] },
+  // Helium escapes to space about as fast as decaying rock makes it; argon-40 builds up to about 0.93% of the
+  // air; radon has a 3.8-day half-life.
+  { id: 'helium', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -269], ['done', 'volcano']], days: 0.5, name: 'Helium', tick: dt => (state.he += (0.1 - state.he * 0.02) * dt), gauge: () => [clamp01(state.he / 6), `${state.he.toFixed(2)} ppm`] },
   { id: 'neon', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -246], ['comets', 1]], days: 0.5, name: 'Neon', gauge: () => [0.5, '18 ppm'] },
-  { id: 'argon', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -186], ['done', 'volcano']], days: 0.5, name: 'Argon', gauge: () => [state.ar / 9340, `${fmt(state.ar)} ppm`] },
+  { id: 'argon', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -186], ['done', 'volcano']], days: 0.5, name: 'Argon', tick: dt => (state.ar = Math.min(9340, state.ar + 0.5 * volcanoes() * dt)), gauge: () => [state.ar / 9340, `${fmt(state.ar)} ppm`] },
   { id: 'krypton', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -153], ['comets', 2]], days: 0.5, name: 'Krypton', gauge: () => [0.3, '1.1 ppm'] },
   { id: 'xenon', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -108], ['comets', 3]], days: 0.5, name: 'Xenon', gauge: () => [0.1, '0.09 ppm'] },
-  { id: 'radon', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -62], ['done', 'plates']], days: 0.5, name: 'Radon', gauge: () => [clamp01(state.rn / 6000), `${fmt(state.rn)} atoms/L`] },
-  { id: 'clouds', icon: 'cloud', tab: 'atmosphere', step: 2, needs: [['water', 10], ['air', 0.5], ['done', 'thawN2']], days: 1, name: 'Clouds', gauge: () => [state.clouds, `${pct(state.clouds)} cover`] },
+  { id: 'radon', icon: 'cloud', tab: 'noble', step: 0, needs: [['temp', -62], ['done', 'plates']], days: 0.5, name: 'Radon', tick: dt => (state.rn += (1000 / DAY_S - state.rn * Math.LN2 / (3.8 * DAY_S)) * dt), gauge: () => [clamp01(state.rn / 6000), `${fmt(state.rn)} atoms/L`] },
+  { id: 'clouds', icon: 'cloud', tab: 'atmosphere', step: 2, needs: [['water', 10], ['air', 0.5], ['done', 'thawN2']], days: 1, name: 'Clouds', cloudRate: () => cloudFormation(), gauge: () => [state.clouds, `${pct(state.clouds)} cover`] },
   { id: 'evap', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['clouds'], needs: [['temp', 10]], days: 1, name: 'Evaporation', cloudMult: 1.5, gauge: () => [clamp01(rates.clouds / 0.05), `+${(rates.clouds * 100).toFixed(1)}% cover/s`] },
   { id: 'rain', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['clouds'], needs: [['clouds', 10]], days: 0.5, name: 'Rain', gauge: rainGauge },
   { id: 'downpour', icon: 'cloud', tab: 'atmosphere', step: 2, requires: ['rain'], replaces: 'rain', needs: [['clouds', 25]], days: 1, name: 'Downpour', rainMult: 3, gauge: rainGauge },
@@ -153,11 +163,11 @@ const RESEARCH = [
   { id: 'volcano', icon: 'vent', tab: 'land', step: 1, days: 0.5, name: 'Volcanoes', volcanoes: 5, gauge: volcanoGauge },
   { id: 'supervolcano', icon: 'vent', tab: 'land', step: 1, requires: ['volcano'], replaces: 'volcano', needs: [['eruptions', 5]], days: 2, name: 'Supervolcanoes', volcanoes: 15, eruptionSize: 2.5, gauge: volcanoGauge },
   { id: 'plates', icon: 'mountain', tab: 'land', step: 1, requires: ['volcano'], needs: [['water', 5]], days: 2, name: 'Plate Tectonics', weatherMult: 1.5, gauge: () => [logLevel(rates.weathering, 100), `−${fmt(rates.weathering)} ppm CO₂/s`] },
-  { id: 'collision', icon: 'mountain', tab: 'land', step: 2, requires: ['plates'], needs: [['land', 35]], days: 3, name: 'Collision', gauge: () => [state.mountains, `${pct(state.mountains)} mountains`] },
+  { id: 'collision', icon: 'mountain', tab: 'land', step: 2, requires: ['plates'], needs: [['land', 35]], days: 3, name: 'Collision', tick: dt => (state.mountains = Math.min(1, state.mountains + 0.004 * (1 - state.mountains) * dt)), gauge: () => [state.mountains, `${pct(state.mountains)} mountains`] },
   // Snow piles up on the peaks into glaciers; their meltwater and the rain run down as rivers, which fill hollows into lakes.
-  { id: 'glaciers', icon: 'mountain', tab: 'land', step: 2, requires: ['collision'], needs: [['mountains', 20], ['done', 'clouds']], days: 2, name: 'Mountain Glaciers',
+  { id: 'glaciers', icon: 'mountain', tab: 'land', step: 2, requires: ['collision'], needs: [['mountains', 20], ['done', 'clouds']], days: 2, name: 'Mountain Glaciers', albedo: () => 0.02 * glacierIce(),
     gauge: () => [glacierIce(), `${pct(glacierIce())} snow on peaks`] },
-  { id: 'rivers', icon: 'wave', tab: 'land', step: 2, requires: ['glaciers'], needs: [['temp', 1], ['done', 'rain']], days: 2, name: 'Rivers',
+  { id: 'rivers', icon: 'wave', tab: 'land', step: 2, requires: ['glaciers'], needs: [['temp', 1], ['done', 'rain']], days: 2, name: 'Rivers', minerals: () => 2 * riverFlow(), weatherMult: () => 1 + 0.5 * riverFlow(),
     gauge: () => [riverFlow(), riverFlow() > 0 ? `${pct(riverFlow())} flow` : 'frozen'] },
   { id: 'lakes', icon: 'wave', tab: 'land', step: 2, requires: ['rivers'], needs: [['mountains', 40]], days: 2, name: 'Lakes', dnaMult: { ground: 1.5 },
     gauge: () => [clamp01(Terrain.lakeCount() / 12), `${Terrain.lakeCount()} lakes`] },
@@ -167,7 +177,7 @@ const RESEARCH = [
   // Moon: its tides need open water; its pull slowly lengthens the day.
   { id: 'tides', icon: 'wave', tab: 'moon', step: 2, needs: [['water', 15]], days: 1, name: 'Tides', iceShift: 2, gauge: () => [openOcean() / (1 - state.land), `${pct(openOcean())} open water`] },
   { id: 'pools', icon: 'wave', tab: 'moon', step: 2, requires: ['tides'], needs: [['water', 30], ['minerals', 50]], days: 1, name: 'Tidal Pools', boltMult: 2, gauge: soupGauge },
-  { id: 'tilt', icon: 'wave', tab: 'moon', step: 2, requires: ['tides'], needs: [['days', 30]], days: 2, name: 'Stable Tilt', tilt: true,
+  { id: 'tilt', icon: 'wave', tab: 'moon', step: 2, requires: ['tides'], needs: [['days', 30]], days: 2, name: 'Stable Tilt', dieOff: 0.5,
     gauge: () => { const n = SPECIES.filter(sp => evolved(sp.id)).length; return [n / SPECIES.length, `${n} species alive`]; } },
   // Life
   { id: 'shallows', icon: 'wave', tab: 'oceanlife', step: 6, needs: [['species', 5], ['done', 'collision']], days: 2, name: 'Shallow Seas', dnaMult: { ocean: 2 },
@@ -180,7 +190,7 @@ const RESEARCH = [
     gauge: () => [Terrain.biomes().grass, `${pct(Terrain.biomes().grass)} grassland · ${pct(Terrain.biomes().desert)} desert`] },
   { id: 'forests', icon: 'tree', tab: 'landlife', step: 7, requires: ['soil'], needs: [['plants', 3]], days: 3, name: 'Forests', dnaMult: { ground: 1.5 },
     gauge: () => [Terrain.biomes().forest, `${pct(Terrain.biomes().forest)} forest`] },
-  { id: 'wetlands', icon: 'plant', tab: 'landlife', step: 7, requires: ['soil'], needs: [['done', 'lakes'], ['temp', 5]], days: 2, name: 'Wetlands', dnaMult: { ground: 1.5 },
+  { id: 'wetlands', icon: 'plant', tab: 'landlife', step: 7, requires: ['soil'], needs: [['done', 'lakes'], ['temp', 5]], days: 2, name: 'Wetlands', dnaMult: { ground: 1.5 }, ch4: () => wetlandMethane(),
     gauge: () => [clamp01(Terrain.biomes().wetland * 10), `${pct(Terrain.biomes().wetland)} wetland · +${wetlandMethane().toFixed(2)} ppm CH₄/s`] },
   // Deep roots reach water far down and hold the soil, so the desert edge pulls back.
   { id: 'roots', icon: 'plant', tab: 'landlife', step: 7, requires: ['grass'], needs: [['desert', 25], ['plants', 2]], days: 3, name: 'Deep Roots',
@@ -340,19 +350,20 @@ const log2 = Math.log2;
 
 const tempC = () => state.tempK - KELVIN;
 
-function mult(key) {
-  return RESEARCH.reduce((m, u) => (owned.has(u.id) && u[key] ? m * u[key] : m), 1);
-}
-
 const has = id => owned.has(id);
+
+// A research field's value on a node: a number, or a function of the planet now. See RESEARCH.
+const field = (u, key) => (typeof u[key] === 'function' ? u[key]() : u[key]);
+const withField = key => RESEARCH.filter(u => u[key] !== undefined && has(u.id));
+const mult = key => withField(key).reduce((m, u) => m * field(u, key), 1);
+const total = key => withField(key).reduce((n, u) => n + field(u, key), 0);
+// The highest value among researched nodes, or `base`.
+const best = (key, base = 0) => withField(key).reduce((v, u) => Math.max(v, field(u, key)), base);
 const soupMult = () => (1 + Math.log10(1 + state.minerals)) * mult('boltMult');
 
 
 // A component is complete when all its research is done; the sun and moon then move to the background.
 const componentDone = tab => RESEARCH.filter(u => u.tab === tab).every(u => has(u.id));
-
-// The highest value of a research field among researched nodes, or `base`.
-const best = (key, base = 0) => RESEARCH.reduce((v, u) => (has(u.id) && u[key] ? Math.max(v, u[key]) : v), base);
 
 // A node shows up once its prerequisites are researched and its step is reached.
 const researchVisible = u => state.step >= u.step && (u.requires || []).every(has);
@@ -372,7 +383,7 @@ function sunBrightness() {
 }
 
 // Ice the planet settles toward at a temperature. Water first opens at 0 °C; ice sheets are gone at about 22 °C.
-function iceTarget(c = tempC() + RESEARCH.reduce((k, u) => k + (has(u.id) && u.iceShift || 0), 0)) {
+function iceTarget(c = tempC() + total('iceShift')) {
   if (c <= 0) return 1;
   if (c <= 14) return 1 - 0.9 * Math.sqrt(c / 14);
   return Math.max(0, 0.1 * (1 - (c - 14) / 8));
@@ -388,6 +399,16 @@ const glacierIce = () => (has('glaciers') ? clamp01((30 - tempC()) / 30) * Math.
 const riverFlow = () => (has('rivers') ? clamp01(tempC() / 15) * clamp01(0.4 + state.clouds) : 0);
 // Wetlands rot plants without oxygen and give off methane, more in the warmth.
 const wetlandMethane = () => (has('wetlands') ? 0.04 * clamp01(tempC() / 15) : 0);
+// Evaporation from open water, faster when the air is warm. Thin air holds little water vapor, so clouds
+// need a thick (nitrogen) atmosphere.
+const cloudFormation = () => 0.03 * openOcean() * Math.max(0, tempC() / 14 + 0.3) * Math.max(0.3, state.pressure);
+
+// A frozen gas thaws into the air, up to `amount` this frame.
+function thaw(gas, amount) {
+  const out = Math.min(state[`${gas}Ice`], amount);
+  state[`${gas}Ice`] -= out;
+  state[gas] += out;
+}
 
 // Warming (K) from one greenhouse gas in thin air. The air pressure and water vapor amplify it in climate().
 const gasWarming = gas => (gas === 'co2' ? 3.3 * log2(1 + state.co2 / 10) : 2 * log2(1 + state.ch4 / 0.5));
@@ -409,7 +430,7 @@ function climate() {
   const dust = state.step >= 1 ? Math.min(0.8, volcanoes() * VOLCANO_DUST + state.ash) : 0;
   // Methane haze without oxygen reflects sunlight too (like Titan's haze). So do eruption aerosols and snowy peaks.
   const albedo = 0.22 + 0.43 * ice * (1 - 0.5 * dust) + 0.08 * state.clouds + 0.1 * methaneHaze()
-    + 0.2 * state.aerosols + 0.03 * state.mountains + 0.02 * glacierIce()
+    + 0.2 * state.aerosols + 0.03 * state.mountains + total('albedo')
     + state.land * (0.15 * Terrain.biomes().desert - 0.08 * Terrain.biomes().forest);   // bright sand, dark forest
   const sunK = 255 * Math.pow(Math.max(0, sunBrightness() * (1 - albedo) / 0.7), 0.25);
   const bare = Math.pow(sunK ** 4 + CORE_K ** 4, 0.25);
@@ -421,21 +442,18 @@ function climate() {
 
 function recalc() {
   const r = {
-    co2: 0, ch4: best('ch4') + wetlandMethane(), minerals: best('minerals') + 2 * riverFlow(), dna: 0, o2: 0, clouds: 0, green: 0, life: 0,
+    co2: 0, ch4: total('ch4'), minerals: total('minerals'), dna: 0, o2: 0, clouds: total('cloudRate') * mult('cloudMult'), green: 0, life: 0,
     dnaBy: { ocean: 0, ground: 0, atmosphere: 0 }, weathering: rates.weathering || 0,
     // Thunderstorms strike on their own, more often the stormier the sky.
     lightning: best('lightning') * clamp01(state.clouds / STORM_CLOUDS),
   };
   // Volcanoes: a little natural outgassing always, plus the player's volcanoes.
   if (state.step >= 1) r.co2 += (2 + volcanoes() * VOLCANO_CO2);
-  // Evaporation from open water, faster when the air is warm.
-  // Thin air holds little water vapor, so clouds need a thick (nitrogen) atmosphere.
-  if (has('clouds')) r.clouds = 0.03 * openOcean() * Math.max(0, tempC() / 14 + 0.3) * mult('cloudMult') * Math.max(0.3, state.pressure);
 
   for (const s of SPECIES) {
     const p = pop(s.id);
     if (p < 0) continue;
-    let dnaMult = RESEARCH.reduce((m, u) => (has(u.id) && u.dnaMult ? m * (u.dnaMult[s.domain] ?? u.dnaMult.all ?? 1) : m), 1);
+    let dnaMult = withField('dnaMult').reduce((m, u) => m * (u.dnaMult[s.domain] ?? u.dnaMult.all ?? 1), 1);
     if (s.domain === 'ground') dnaMult *= 1 - 0.7 * Terrain.biomes().desert;   // little lives in the desert
     r.dna += s.dna * p * dnaMult;
     r.dnaBy[s.domain] += s.dna * p * dnaMult;
@@ -497,42 +515,26 @@ function simulate(dt) {
     }
   }
 
-  // Noble gases react with nothing. Helium escapes to space about as fast as decaying rock makes it; argon-40
-  // comes out with volcanic gas, from potassium decay, until it is about 0.93% of the air; radon has a 3.8-day half-life.
-  if (has('helium')) state.he += (0.1 - state.he * 0.02) * dt;
-  if (has('argon')) state.ar = Math.min(9340, state.ar + 0.5 * volcanoes() * dt);
-  if (has('radon')) state.rn += (1000 / DAY_S - state.rn * Math.LN2 / (3.8 * DAY_S)) * dt;
+  // What research does over time: gases thaw and build up, colliding plates pile up mountains.
+  for (const u of withField('tick')) u.tick(dt);
 
-  // Volcanoes slowly build new land; colliding plates pile it up into mountains.
+  // Volcanoes slowly build new land.
   state.land = Math.min(MAX_LAND, state.land + 0.00004 * volcanoes() * (1 - state.land / MAX_LAND) * dt);
-  if (has('collision')) state.mountains = Math.min(1, state.mountains + 0.004 * (1 - state.mountains) * dt);
 
   // Eruptions come at random. Aerosols and ash then rain out over time.
   if (volcanoes() > 0 && Math.random() < volcanoes() * dt / ERUPTION_EVERY_S) erupt();
   state.aerosols *= Math.exp(-dt / AEROSOL_LIFE_S);
   state.ash *= Math.exp(-dt / ASH_LIFE_S);
 
-  // Thawed gases turn into air (the player chose which ones in the Atmosphere panel).
-  if (has('thawN2')) state.pressure = Math.min(1, state.pressure + 0.08 * dt);
   // Without a magnetic field the solar wind slowly strips the air away, as it did on Mars.
   if (state.step >= 3 && !has('magnet')) state.pressure = Math.max(0.2, state.pressure - 0.0003 * dt);
-  if (has('thawCH4') && state.ch4Ice > 0) {
-    const out = Math.min(state.ch4Ice, 2 * dt);
-    state.ch4Ice -= out;
-    state.ch4 += out;
-  }
-  if (has('thawCO2') && state.co2Ice > 0) {
-    const out = Math.min(state.co2Ice, 120 * dt);
-    state.co2Ice -= out;
-    state.co2 += out;
-  }
 
   // Carbon cycle: volcanoes add CO2; rock weathering removes it when warm and wet (the planet's thermostat);
   // photosynthesis removes it too. Oxygen destroys methane.
   const c = tempC(), open = 1 - iceCover();
   // Weathering speeds up sharply in the heat, with more land, and most of all on fresh mountain rock.
   const rock = state.land / BASE_LAND * (1 + 2 * state.mountains);
-  const weathering = 0.002 * state.co2 * Math.max(0, c / 15) ** 1.5 * open * rock * mult('weatherMult') * (1 + 0.5 * riverFlow()) * (1 + Terrain.biomes().forest);   // roots break rock
+  const weathering = 0.002 * state.co2 * Math.max(0, c / 15) ** 1.5 * open * rock * mult('weatherMult') * (1 + Terrain.biomes().forest);   // roots break rock
   const photosynthesis = rates.o2 * 1500 * state.co2 / (state.co2 + 1000);   // slows when CO2 runs low
   rates.weathering = weathering;
   state.co2 = Math.max(0, state.co2 + (rates.co2 - weathering - photosynthesis) * dt);
@@ -548,7 +550,7 @@ function simulate(dt) {
   state.dna += rates.dna * dt;
   state.o2 += rates.o2 * (1 - state.o2 / MAX_O2) * dt;   // levels off near today's 21%
   // Clouds form from evaporation and rain out at 5% per second.
-  if (has('clouds')) state.clouds = clamp01(state.clouds + (rates.clouds - state.clouds * 0.05) * dt);
+  state.clouds = clamp01(state.clouds + (rates.clouds - state.clouds * 0.05) * dt);
 
   // Species grow toward what their habitat holds inside their temperature range, shrink back when the habitat
   // shrinks, and die back outside the range.
@@ -557,7 +559,7 @@ function simulate(dt) {
     if (p < 0) continue;
     const s = SPECIES_BY_ID[id], f = fitness(s, c), room = habitat(s);
     let next;
-    if (f <= 0) next = p * (1 + f * (has('tilt') ? 0.075 : 0.15) * dt);
+    if (f <= 0) next = p * (1 + f * 0.15 * mult('dieOff') * dt);
     else if (p > room) next = p - (p - room) * Math.min(1, 0.1 * dt);
     else next = Math.min(room, p + p * (1 - p) * 0.25 * dt);
     if (next < 0.005) {
