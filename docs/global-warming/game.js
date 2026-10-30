@@ -86,6 +86,10 @@ const ASH_LIFE_S = 120;
 // learns what it does by watching it move as the rest of the planet changes.
 const logLevel = (v, max) => clamp01(Math.log10(1 + Math.max(0, v)) / Math.log10(1 + max));
 const sunGauge = () => [sunBrightness(), `${pct(sunBrightness())} of today · ${state.sunAge.toFixed(1)} Gyr old`];
+// Snow on the peaks: glaciers grow on high mountains while the planet is cool enough.
+const glacierIce = () => (has('glaciers') ? clamp01((30 - tempC()) / 30) * Math.min(1, state.mountains * 2) : 0);
+// Water running down the rivers: glacier melt and rain, none while frozen.
+const riverFlow = () => (has('rivers') ? clamp01(tempC() / 15) * clamp01(0.4 + state.clouds) : 0);
 const volcanoGauge = () => [clamp01(rates.co2 / 200), `+${fmt(rates.co2)} ppm CO₂/s · ${pct(state.land)} land`];
 const soupGauge = () => [clamp01(soupMult() / 12), `x${soupMult().toFixed(1)} soup per strike`];
 const rainGauge = () => [logLevel(state.minerals, 1e4), `${fmt(state.minerals)} minerals · +${fmt(mult('rainMult'))} per drop`];
@@ -104,6 +108,7 @@ const NEEDS = {
   strikes: { label: v => `${v} lightning strikes`, now: () => state.strikes, show: v => `${v}` },
   eruptions: { label: v => `${v} eruptions`, now: () => state.eruptions, show: v => `${v}` },
   land: { label: v => `${v}% land`, now: () => state.land * 100, show: v => `${v.toFixed(0)}%` },
+  mountains: { label: v => `${v}% mountains`, now: () => state.mountains * 100, show: v => `${v.toFixed(0)}%` },
   minerals: { label: v => `${v} minerals`, now: () => state.minerals, show: v => fmt(v) },
   species: { label: v => `${v} species alive`, now: () => SPECIES.filter(sp => evolved(sp.id)).length, show: v => `${v}` },
   plants: { label: v => `${v} land plants`, now: () => SPECIES.filter(sp => sp.green && evolved(sp.id)).length, show: v => `${v}` },
@@ -152,6 +157,13 @@ const RESEARCH = [
   { id: 'supervolcano', icon: 'vent', tab: 'land', step: 1, requires: ['volcano'], replaces: 'volcano', needs: [['eruptions', 5]], days: 2, name: 'Supervolcanoes', volcanoes: 15, eruptionSize: 2.5, gauge: volcanoGauge },
   { id: 'plates', icon: 'mountain', tab: 'land', step: 1, requires: ['volcano'], needs: [['water', 5]], days: 2, name: 'Plate Tectonics', weatherMult: 1.5, gauge: () => [logLevel(rates.weathering, 100), `−${fmt(rates.weathering)} ppm CO₂/s`] },
   { id: 'collision', icon: 'mountain', tab: 'land', step: 2, requires: ['plates'], needs: [['land', 35]], days: 3, name: 'Collision', gauge: () => [state.mountains, `${pct(state.mountains)} mountains`] },
+  // Snow piles up on the peaks into glaciers; their meltwater and the rain run down as rivers, which fill hollows into lakes.
+  { id: 'glaciers', icon: 'mountain', tab: 'land', step: 2, requires: ['collision'], needs: [['mountains', 20], ['done', 'clouds']], days: 2, name: 'Mountain Glaciers',
+    gauge: () => [glacierIce(), `${pct(glacierIce())} snow on peaks`] },
+  { id: 'rivers', icon: 'wave', tab: 'land', step: 2, requires: ['glaciers'], needs: [['temp', 1], ['done', 'rain']], days: 2, name: 'Rivers',
+    gauge: () => [riverFlow(), riverFlow() > 0 ? `${pct(riverFlow())} flow` : 'frozen'] },
+  { id: 'lakes', icon: 'wave', tab: 'land', step: 2, requires: ['rivers'], needs: [['mountains', 40]], days: 2, name: 'Lakes', dnaMult: { ground: 1.5 },
+    gauge: () => [clamp01(Scene.lakeCount() / 12), `${Scene.lakeCount()} lakes`] },
   // Ocean
   { id: 'currents', icon: 'wave', tab: 'ocean', step: 2, needs: [['water', 20], ['done', 'thawN2']], days: 1, name: 'Ocean Currents', iceShift: 4, gauge: () => [1 - state.ice, `${pct(state.ice)} ice`] },
   { id: 'vents', icon: 'vent', tab: 'ocean', step: 2, needs: [['water', 10], ['done', 'plates']], days: 1, name: 'Hydrothermal Vents', minerals: 1, ch4: 0.025, gauge: () => [logLevel(state.minerals, 1e4), `${fmt(state.minerals)} minerals`] },
@@ -162,7 +174,7 @@ const RESEARCH = [
     gauge: () => { const n = SPECIES.filter(sp => evolved(sp.id)).length; return [n / SPECIES.length, `${n} species alive`]; } },
   // Life
   { id: 'shallows', icon: 'wave', tab: 'oceanlife', step: 6, needs: [['species', 5], ['done', 'collision']], days: 2, name: 'Shallow Seas', dnaMult: { ocean: 2 }, gauge: dnaGauge('ocean') },
-  { id: 'soil', icon: 'plant', tab: 'landlife', step: 7, needs: [['plants', 1], ['done', 'rain']], days: 2, name: 'Soil', dnaMult: { ground: 2 }, gauge: dnaGauge('ground') },
+  { id: 'soil', icon: 'plant', tab: 'landlife', step: 7, needs: [['plants', 1], ['done', 'rivers']], days: 2, name: 'Soil', dnaMult: { ground: 2 }, gauge: dnaGauge('ground') },
 ];
 const RESEARCH_BY_ID = Object.fromEntries(RESEARCH.map(r => [r.id, r]));
 // The opening: tap the singularity until it bangs, then fly through 9.2 billion years of space
@@ -374,7 +386,7 @@ function climate() {
   const dust = state.step >= 1 ? Math.min(0.8, volcanoes() * VOLCANO_DUST + state.ash) : 0;
   // Methane haze without oxygen reflects sunlight too (like Titan's haze). So do eruption aerosols and snowy peaks.
   const albedo = 0.22 + 0.43 * ice * (1 - 0.5 * dust) + 0.08 * state.clouds + 0.1 * methaneHaze()
-    + 0.2 * state.aerosols + 0.03 * state.mountains;
+    + 0.2 * state.aerosols + 0.03 * state.mountains + 0.02 * glacierIce();
   const sunK = 255 * Math.pow(Math.max(0, sunBrightness() * (1 - albedo) / 0.7), 0.25);
   const bare = Math.pow(sunK ** 4 + CORE_K ** 4, 0.25);
   // Greenhouse: each doubling of CO2 adds a few degrees; thin air holds less heat; water vapor amplifies it.
@@ -385,7 +397,7 @@ function climate() {
 
 function recalc() {
   const r = {
-    co2: 0, ch4: best('ch4'), minerals: best('minerals'), dna: 0, o2: 0, clouds: 0, green: 0, life: 0,
+    co2: 0, ch4: best('ch4'), minerals: best('minerals') + 2 * riverFlow(), dna: 0, o2: 0, clouds: 0, green: 0, life: 0,
     dnaBy: { ocean: 0, ground: 0, atmosphere: 0 }, weathering: rates.weathering || 0,
     // Thunderstorms strike on their own, more often the stormier the sky.
     lightning: best('lightning') * clamp01(state.clouds / STORM_CLOUDS),
@@ -479,7 +491,7 @@ function simulate(dt) {
   const c = tempC(), open = 1 - iceCover();
   // Weathering speeds up sharply in the heat, with more land, and most of all on fresh mountain rock.
   const rock = state.land / BASE_LAND * (1 + 2 * state.mountains);
-  const weathering = 0.002 * state.co2 * Math.max(0, c / 15) ** 1.5 * open * rock * mult('weatherMult');
+  const weathering = 0.002 * state.co2 * Math.max(0, c / 15) ** 1.5 * open * rock * mult('weatherMult') * (1 + 0.5 * riverFlow());
   const photosynthesis = rates.o2 * 1500 * state.co2 / (state.co2 + 1000);   // slows when CO2 runs low
   rates.weathering = weathering;
   state.co2 = Math.max(0, state.co2 + (rates.co2 - weathering - photosynthesis) * dt);
@@ -1276,6 +1288,10 @@ function updateScene(c) {
   Scene.setSpin(state.spin);
   Scene.setVolcanoes(has('supervolcano') ? 4 : has('volcano') ? 2 : 0);
   Scene.setLand(state.land, state.mountains, state.aerosols);
+  Scene.setFeatures({
+    peaks: has('collision') ? Math.max(1, Math.round(state.mountains * 8)) : 0,
+    snow: glacierIce() > 0.05, rivers: has('rivers'), lakes: has('lakes'), frozen: tempC() < 0,
+  });
   const storms = state.step >= 4 ? Math.min(3, 1 + Math.floor((state.clouds - STORM_CLOUDS) * 10)) : 0;
   Scene.setClouds(has('clouds') ? state.clouds : 0, Math.max(0, storms));
   Scene.setLife(clamp01(rates.green), clamp01(rates.life / 6), ozone());

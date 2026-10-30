@@ -57,17 +57,24 @@ const Scene = (() => {
   let climate = null, smog = 0, spin = 0, lastBg = -1e9, currentSea = seaThreshold;
   let landLife = 0, oceanLife = 0, ozone = 0, land = 0.3, mountains = 0, aerosols = 0;
   let iceCoverValue = 1, pressure = 0, haze = 0, sunBright = 1;
-  // Volcanoes on the planet's visible edge: tap a glowing one to make it erupt; it then cools for a while.
-  const VOLCANO_SPOTS = [0.42, 0.68, 0.28, 0.56, 0.8];
+  // Volcanoes stand on the map and turn with the planet: tap a glowing one to make it erupt; it then cools for a while.
   const VOLCANO_COOL_S = 8;
   let volcanoes = [], onVolcanoFn = () => {};
+  // Features that research puts on the map: mountain peaks (snowy once glaciers form), rivers running
+  // from them to the sea, and lakes in the hollows on the way.
+  const FEATURE_BAND = [Math.round(TEX_H * 55 / 180), Math.round(TEX_H * 145 / 180)];   // 35°N to 55°S, the side in view
+  const NEIGHBOURS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const RIVER = hex('#3a7ad0');
+  const LAKE = hex('#2a5aa8');
+  let peakSpots = [], volcanoSpots = [], rivers = [], peaks = [], water = new Uint8Array(TEX_W * TEX_H);
+  let feat = { peaks: 0, snow: false, rivers: false, lakes: false, frozen: false };
   let counts = {}, groundSprites = [], skySprites = [], jetCount = 0, jets = [], jetTimer = 0;
   let clouds = [], cloudCover = 0, storms = 0;
   let particles = [], bolts = [], smokeRate = 0, smokeTimer = 0;
   let sunPress = 0, comet = null, spinLevel = 0, drag = null;
   // Opening movie: 'pre' = the singularity waits for taps, 'warp' = the flight through space after the bang.
   // Day and night: once the planet spins steadily, the sun rises at 6 and sets at 18 o'clock.
-  let dayShown = false, dayHour = 12;
+  let dayShown = false, dayHour = 12, dayFirst = true;
   let viewTilt = TILT, tiltDirty = false;   // the player can tip the planet to look at it from other angles
   // Once days run, the view settles on the planet: it stops turning and the sky turns instead.
   let landed = 0, skyShift = 0, lastHour = null;
@@ -194,6 +201,7 @@ const Scene = (() => {
         const i = v * TEX_W + u, e = elev[i], m = moist[i];
         let c;
         if (lat + (e - seaThreshold) * 60 > limit) c = e < sea ? SEA_ICE : LAND_ICE;
+        else if (water[i] && e >= sea) c = feat.frozen ? SEA_ICE : water[i] === 2 ? LAKE : RIVER;
         else if (e < sea - 0.06) c = deep;
         else if (e < sea) c = shallow;
         else if (e > sea + 0.14 - 0.08 * mountains) c = MOUNTAIN;
@@ -269,7 +277,6 @@ const Scene = (() => {
     }));
 
     slots = [];
-    volcanoes = [];   // placed again on the next setVolcanoes, for the new size
     for (let x = cx - R * 0.62; x <= cx + R * 0.62; x += 6) slots.push(Math.round(x));
     const order = rng(11);
     for (let i = slots.length - 1; i > 0; i--) {
@@ -311,6 +318,141 @@ const Scene = (() => {
         }
       }
     }
+  }
+
+  /* ---------- features on the map ---------- */
+
+  const texDist = (a, b) => Math.hypot(Math.min(Math.abs(a.u - b.u), TEX_W - Math.abs(a.u - b.u)), a.v - b.v);
+
+  // Up to n texture spots in the band in view, best score first, at least minDist apart (and from `avoid`).
+  function pickSpots(n, minDist, score, avoid = []) {
+    const cand = [];
+    for (let v = FEATURE_BAND[0]; v < FEATURE_BAND[1]; v++) {
+      for (let u = 0; u < TEX_W; u++) cand.push({ u, v, s: score(elev[v * TEX_W + u]) });
+    }
+    cand.sort((a, b) => b.s - a.s);
+    const out = [];
+    for (const c of cand) {
+      if (out.length >= n) break;
+      if (out.every(o => texDist(o, c) >= minDist) && avoid.every(o => texDist(o, c) >= minDist / 2)) out.push(c);
+    }
+    return out;
+  }
+
+  // A river runs downhill from a peak to the sea, always to the lowest neighbour it has not crossed yet.
+  // In a hollow it spreads out until it can spill over the rim: those texels are a lake. Until lakes are
+  // researched the river ends at the first one.
+  function traceRiver(p, sea) {
+    const path = [], seen = new Set();
+    let u = p.u, v = p.v;
+    for (let step = 0; step < 400; step++) {
+      const i = v * TEX_W + u;
+      seen.add(i);
+      path.push(i);
+      if (elev[i] < sea) break;
+      let next = null;
+      for (const [du, dv] of NEIGHBOURS) {
+        const nu = (u + du + TEX_W) % TEX_W, nv = v + dv;
+        if (nv < 0 || nv >= TEX_H) continue;
+        const j = nv * TEX_W + nu;
+        if (!seen.has(j) && (next === null || elev[j] < elev[next.j])) next = { u: nu, v: nv, j };
+      }
+      if (!next) break;
+      u = next.u;
+      v = next.v;
+    }
+    // A texel is in a hollow when the river has to climb higher later on.
+    const lakes = [];
+    let rim = -Infinity, run = [];
+    for (let k = path.length - 1; k >= 0; k--) {
+      const e = elev[path[k]];
+      if (e < rim) run.push(path[k]);
+      else {
+        if (run.length >= 3) lakes.unshift(run);
+        run = [];
+      }
+      rim = Math.max(rim, e);
+    }
+    if (run.length >= 3) lakes.unshift(run);
+    // The river only crossed part of each hollow; fill the rest of it up to the highest water on the path.
+    for (const l of lakes) {
+      const top = Math.max(...l.map(i => elev[i])), inLake = new Set(l);
+      for (let k = 0; k < l.length && l.length < 300; k++) {
+        const u = l[k] % TEX_W, v = Math.floor(l[k] / TEX_W);
+        for (const [du, dv] of NEIGHBOURS) {
+          if (v + dv < 0 || v + dv >= TEX_H) continue;
+          const j = (v + dv) * TEX_W + (u + du + TEX_W) % TEX_W;
+          if (elev[j] <= top && !inLake.has(j)) {
+            inLake.add(j);
+            l.push(j);
+          }
+        }
+      }
+    }
+    // Keep only the deepest part of each hollow, so lakes stay lakes and not inland seas.
+    for (const l of lakes) {
+      l.sort((a, b) => elev[a] - elev[b]);
+      l.length = Math.min(l.length, 40);
+    }
+    // Every river gets at least one lake, halfway down.
+    if (!lakes.length && path.length > 8) {
+      const mid = path[Math.floor(path.length / 2)], mu = mid % TEX_W, mv = Math.floor(mid / TEX_W), disc = [];
+      for (let dv = -2; dv <= 2; dv++) {
+        for (let du = -3; du <= 3; du++) {
+          if (mv + dv >= 0 && mv + dv < TEX_H && (du / 3) ** 2 + (dv / 2) ** 2 <= 1.1) disc.push((mv + dv) * TEX_W + (mu + du + TEX_W) % TEX_W);
+        }
+      }
+      lakes.push(disc);
+    }
+    const first = new Set(lakes[0] || []);
+    const end = path.findIndex(i => first.has(i));
+    return { path, lakes, dry: end < 0 ? path.length : end };
+  }
+
+  // Where the features can go, from the shape of the terrain. Peaks are the highest ground; volcanoes stand on
+  // land that stays dry even when the sea rises.
+  function placeFeatures() {
+    const sea = seaThreshold;
+    peakSpots = pickSpots(16, 18, e => e);
+    volcanoSpots = pickSpots(12, 18, e => -Math.abs(e - (sea + 0.08)), peakSpots);
+    rivers = peakSpots.map(p => traceRiver(p, elevSorted[Math.floor(elevSorted.length * 0.5)]));
+  }
+
+  // The texture spot in the middle of the view, where new features appear so the player sees them.
+  function viewCentre() {
+    const i = Math.floor(H * 0.75) * W + Math.floor(cx);
+    return { u: ((pixU[i] + spin) % 1) * TEX_W, v: pixV[i] };
+  }
+
+  // Indices of `spots` already in use, grown to n with the unused spots nearest the view.
+  function grow(used, spots, n) {
+    const out = used.slice(0, n), centre = viewCentre();
+    const free = spots.map((s, k) => k).filter(k => !out.includes(k)).sort((a, b) => texDist(spots[a], centre) - texDist(spots[b], centre));
+    while (out.length < Math.min(n, spots.length)) out.push(free.shift());
+    return out;
+  }
+
+  // Paint the rivers and lakes of the peaks in use into the water map.
+  function updateWater() {
+    water.fill(0);
+    if (!feat.rivers) return;
+    for (const k of peaks) {
+      const r = rivers[k];
+      r.path.slice(0, feat.lakes ? r.path.length : r.dry).forEach(i => (water[i] = 1));
+      if (feat.lakes) r.lakes.forEach(l => l.forEach(i => (water[i] = 2)));
+    }
+  }
+
+  // Screen point of a texture spot on the turning planet, or null when it is on the far side.
+  function project(s) {
+    const a = ((((s.u + 0.5) / TEX_W - spin) % 1 + 1) % 1 - 0.5) * 2 * Math.PI;
+    const lat = (0.5 - (s.v + 0.5) / TEX_H) * Math.PI;
+    const wy = Math.sin(lat), nx = Math.cos(lat) * Math.sin(a), wz = Math.cos(lat) * Math.cos(a);
+    const cosT = Math.cos(viewTilt), sinT = Math.sin(viewTilt);
+    const ny = wy * cosT + wz * sinT, nz = -wy * sinT + wz * cosT;
+    if (nz < 0.12) return null;
+    const p = { x: Math.round(cx + nx * R), y: Math.round(cy - ny * R + camY) };
+    return p.y > H + 4 ? null : p;
   }
 
   function layoutSprites() {
@@ -599,11 +741,21 @@ const Scene = (() => {
       if (Math.random() < 0.6) particles.push({ x: j.x, y: j.y + 2, vx: 0, vy: 0, life: 1.5, max: 1.5, size: 1, color: '#e8eef8' });
     }
     for (const s of groundSprites) ctx.drawImage(Sprites.canvas(s.id), s.dx, s.dy + camY);
+    // Volcanoes and peaks stand on the map, drawn back to front at double size: they are landmarks.
+    const marks = [];
     for (const v of volcanoes) {
       v.cool = Math.max(0, v.cool - dt);
-      // Drawn at double size: volcanoes are landmarks to tap.
-      const c = Sprites.canvas(v.cool > 0 ? 'volcanoCold' : 'volcano');
-      ctx.drawImage(c, Math.round(v.x - c.width), Math.round(surfaceY(v.x)) - c.height * 2 + 2 + camY, c.width * 2, c.height * 2);
+      v.at = project(volcanoSpots[v.spot]);
+      if (v.at) marks.push({ at: v.at, id: v.cool > 0 ? 'volcanoCold' : 'volcano' });
+    }
+    for (const k of peaks) {
+      const at = project(peakSpots[k]);
+      if (at) marks.push({ at, id: feat.snow ? 'peakSnow' : 'peak' });
+    }
+    marks.sort((a, b) => a.at.y - b.at.y);
+    for (const m of marks) {
+      const c = Sprites.canvas(m.id);
+      ctx.drawImage(c, m.at.x - c.width, m.at.y - c.height * 2 + 2, c.width * 2, c.height * 2);
     }
   }
 
@@ -837,7 +989,7 @@ const Scene = (() => {
       onMoon(e.clientX, e.clientY);
       return;
     }
-    const vi = volcanoes.findIndex(v => Math.abs(x - v.x) <= 15 && y <= surfaceY(v.x) + camY + 3 && y >= surfaceY(v.x) + camY - 16);
+    const vi = volcanoes.findIndex(v => v.at && Math.abs(x - v.at.x) <= 14 && y <= v.at.y + 3 && y >= v.at.y - 15);
     if (vi >= 0) {
       e.preventDefault();
       if (volcanoes[vi].cool <= 0) onVolcanoFn(vi);
@@ -910,6 +1062,7 @@ const Scene = (() => {
   return {
     init() {
       resize();
+      placeFeatures();
     },
     draw,
     setClimate(t) {
@@ -1061,20 +1214,42 @@ const Scene = (() => {
       updateSky(climate);
       lastBg = -1e9;
     },
-    // A volcano erupts somewhere on the visible planet: lava, then a column of ash.
-    // How many volcanoes stand on the planet's edge.
+    // How many volcanoes stand on the planet. New ones rise where the player is looking.
     setVolcanoes(n) {
       if (n === volcanoes.length) return;
-      volcanoes = VOLCANO_SPOTS.slice(0, n).map(f => ({ x: Math.round(cx + (f - 0.5) * W * 0.9), cool: 0 }));
+      const spots = grow(volcanoes.map(v => v.spot), volcanoSpots, n);
+      volcanoes = spots.map(k => volcanoes.find(v => v.spot === k) || { spot: k, cool: 0, at: null });
+    },
+    // Features from research: how many mountain peaks, whether they have glaciers, whether rivers and lakes
+    // run from them, and whether that water is frozen.
+    setFeatures(f) {
+      if (Object.keys(feat).every(k => f[k] === feat[k])) return;
+      const wet = f.rivers !== feat.rivers || f.lakes !== feat.lakes || f.frozen !== feat.frozen || f.peaks !== feat.peaks;
+      feat = { ...feat, ...f };
+      if (f.peaks !== peaks.length) peaks = grow(peaks, peakSpots, f.peaks);
+      if (!wet) return;
+      updateWater();
+      if (climate !== null) updateTexture(climate);
+      lastBg = -1e9;
+    },
+    // How many lakes are on the planet now.
+    // Screen positions of the volcanoes in view (for tests).
+    volcanoPoints() {
+      return volcanoes.map(v => v.at && { x: v.at.x * P, y: v.at.y * P });
+    },
+    lakeCount() {
+      return feat.rivers && feat.lakes ? peaks.reduce((n, k) => n + rivers[k].lakes.length, 0) : 0;
     },
     onVolcanoTap(fn) {
       onVolcanoFn = fn;
     },
     // A volcano erupts: lava, then a column of ash. Index i picks a volcano; otherwise a ready one, if any.
     erupt(size = 1, i = -1) {
-      const v = volcanoes[i] || volcanoes.find(o => o.cool <= 0);
+      // Prefer a ready volcano in view; one on the far side erupts unseen.
+      const v = volcanoes[i] || volcanoes.find(o => o.cool <= 0 && o.at) || volcanoes.find(o => o.cool <= 0);
       if (v) v.cool = VOLCANO_COOL_S;
-      const x = v ? v.x : cx + (Math.random() - 0.5) * R * 0.8, y = groundY(x) - (v ? 11 : 0);
+      if (v && !v.at) return;
+      const x = v ? v.at.x : cx + (Math.random() - 0.5) * R * 0.8, y = v ? v.at.y - 11 : groundY(x);
       for (let k = 0; k < 25 * size; k++) {
         const a = -Math.PI / 2 + (Math.random() - 0.5) * 0.9, v = 15 + Math.random() * 35 * size;
         particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.8, max: 0.8, size: 1, color: Math.random() < 0.5 ? '#ff5a1a' : '#ffb02e' });
@@ -1085,6 +1260,9 @@ const Scene = (() => {
     },
     // Day and night: shown once the planet spins steadily, and the hour of the day (0..24).
     setDay(shown, hour) {
+      // A saved planet that already has days starts settled, so map features stay where they were placed.
+      if (dayFirst && shown) landed = 1;
+      dayFirst = false;
       dayShown = shown;
       dayHour = hour;
     },

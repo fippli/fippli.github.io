@@ -5,6 +5,7 @@ const SPRITE_COLORS = {
   k: '#1a1420', d: '#4a4a56', g: '#8a8a96', w: '#f0f0f0', s: '#6a7a8a',
   o: '#ff8a1a', y: '#ffd23f', r: '#d83a2a', b: '#7a4a2a', n: '#c8a070',
   u: '#3a6ad8', c: '#8ad8ff', l: '#4aa84a', m: '#2a6a3a', p: '#f0a0d0',
+  h: '#9a8a78', j: '#5a4e48',
 };
 
 const SPRITES = {
@@ -264,6 +265,24 @@ const SPRITES = {
     '..kdddgdddk..',
     '.kddgddddddk.',
     'kdddddddgdddk',
+  ],
+  peak: [
+    '......k......',
+    '.....khk.....',
+    '....khjjk....',
+    '...khjjjhk...',
+    '..khjjhjjjk..',
+    '.khjjjjjhjjk.',
+    'khjjhjjjjjjjk',
+  ],
+  peakSnow: [
+    '......k......',
+    '.....kwk.....',
+    '....kwwwk....',
+    '...kwwjwwk...',
+    '..khjwhjwjk..',
+    '.khjjjjjhjjk.',
+    'khjjhjjjjjjjk',
   ],
   volcanoCold: [
     '.............',
