@@ -260,6 +260,9 @@ h3 { margin: 12px 4px 8px; font-family: var(--pixel-font); font-size: 10px; font
 .float.soup { color: #8af0b0; }
 .float.rain { color: #8ac8ff; font-size: 11px; }
 .float.miss { color: #a09cc8; font-size: 10px; }
+.float.critter { font-size: 9px; animation-duration: 2s; }
+.float.critter.good { color: #8af0b0; }
+.float.critter.bad { color: #ff8a7a; }
 
 /* ---------- Life tab ---------- */
 

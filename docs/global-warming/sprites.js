@@ -75,6 +75,21 @@ const SPRITES = {
     '.lllll.',
     'l.l.l.l',
   ],
+  coral: [
+    '.p...p.',
+    '.pp.pp.',
+    '..ppp..',
+    'p..p..p',
+    '.ppppp.',
+    '...p...',
+  ],
+  reeffish: [
+    '....y..',
+    '.yoyo.y',
+    'kyoyoyy',
+    '.yoyo.y',
+    '....y..',
+  ],
   fly: [
     'cc.cc',
     '.ckc.',

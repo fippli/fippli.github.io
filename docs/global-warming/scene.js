@@ -62,7 +62,8 @@ const Scene = (() => {
   const VOLCANO_COOL_S = 8;
   let volcanoes = [], onVolcanoFn = () => {};
   const NEIGHBOURS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-  const MOVES = { fly: 'fly', fish: 'swim', jelly: 'swim', worm: 'swim', frog: 'hop', bug: 'hop' };
+  let critterHits = [], onCritterFn = () => {};
+  const MOVES = { fly: 'fly', fish: 'swim', reeffish: 'swim', jelly: 'swim', worm: 'swim', frog: 'hop', bug: 'hop' };
   let clouds = [], cloudCover = 0, storms = 0;
   let particles = [], bolts = [];
   let sunPress = 0, comet = null, spinLevel = 0, drag = null;
@@ -554,7 +555,7 @@ const Scene = (() => {
     for (const v of volcanoes) {
       v.cool = Math.max(0, v.cool - dt);
       v.at = project(Terrain.volcanoSpot(v.spot));
-      if (v.at) marks.push({ at: v.at, id: v.cool > 0 ? 'volcanoCold' : 'volcano' });
+      if (v.at) marks.push({ at: v.at, id: v.cool > 0 ? 'volcanoCold' : 'volcano', size: 2 });
     }
     const peak = Terrain.features().snow ? 'peakSnow' : 'peak';
     for (const p of Terrain.peaks()) {
@@ -562,6 +563,7 @@ const Scene = (() => {
       if (at) marks.push({ at, id: peak, size: 2 });
     }
     const t = now / 1000;
+    critterHits = [];
     for (const c of Terrain.critters()) {
       const move = MOVES[c.sprite];
       for (const s of c.spots) {
@@ -570,7 +572,9 @@ const Scene = (() => {
         const k = Math.sin(t * 2 + s.phase);
         const dx = move === 'swim' ? Math.round(k) : 0;
         const dy = move === 'fly' ? Math.round(k * 1.5) - 5 : move === 'hop' ? -Math.round(Math.max(0, k) * 2) : 0;
-        marks.push({ at: { x: at.x + dx, y: at.y + dy }, img: outlined(c.sprite), size: 1 });
+        const img = outlined(c.sprite), x = at.x + dx, y = at.y + dy;
+        marks.push({ at: { x, y }, img, size: 1 });
+        critterHits.push({ id: c.id, x, y, w: img.width, h: img.height });
       }
     }
     marks.sort((a, b) => a.at.y - b.at.y);
@@ -799,6 +803,14 @@ const Scene = (() => {
       if (volcanoes[vi].cool <= 0) onVolcanoFn(vi);
       return;
     }
+    // Critters are small, so the tap area reaches a little past the sprite. The nearest one wins.
+    const near = critterHits.filter(c => Math.abs(x - c.x) <= c.w / 2 + 3 && y >= c.y - c.h - 3 && y <= c.y + 3);
+    if (near.length) {
+      e.preventDefault();
+      const c = near.sort((a, b) => Math.hypot(x - a.x, y - a.y) - Math.hypot(x - b.x, y - b.y))[0];
+      onCritterFn(c.id, e.clientX, e.clientY);
+      return;
+    }
     const hit = visibleClouds().find(v => x >= v.x - 3 && x <= v.x + v.w + 3 && y >= v.y - 6 && y <= v.y + 6);
     if (hit) {
       e.preventDefault();
@@ -1025,9 +1037,17 @@ const Scene = (() => {
     setCritters(list) {
       Terrain.setCritters(list, viewCentre());
     },
+    // Screen positions of the critters in view (for tests).
+    critterPoints() {
+      return critterHits.map(c => ({ id: c.id, x: c.x * P, y: (c.y - 3) * P }));
+    },
     // Screen positions of the volcanoes in view (for tests).
     volcanoPoints() {
       return volcanoes.map(v => v.at && { x: v.at.x * P, y: v.at.y * P });
+    },
+    // Called with the species id when a critter on the map is tapped.
+    onCritterTap(fn) {
+      onCritterFn = fn;
     },
     onVolcanoTap(fn) {
       onVolcanoFn = fn;

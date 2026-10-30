@@ -107,6 +107,7 @@ const NEEDS = {
   mountains: { label: v => `${v}% mountains`, now: () => state.mountains * 100, show: v => `${v.toFixed(0)}%` },
   minerals: { label: v => `${v} minerals`, now: () => state.minerals, show: v => fmt(v) },
   species: { label: v => `${v} species alive`, now: () => SPECIES.filter(sp => evolved(sp.id)).length, show: v => `${v}` },
+  desert: { label: v => `${v}% desert`, now: () => Terrain.biomes().desert * 100, show: v => `${v.toFixed(0)}%` },
   plants: { label: v => `${v} land plants`, now: () => SPECIES.filter(sp => sp.green && evolved(sp.id)).length, show: v => `${v}` },
   comets: { label: v => `${v} ${v === 1 ? 'comet' : 'comets'} caught`, now: () => state.comets, show: v => `${v}` },
   // A link to another branch of the tree: that research must be done first.
@@ -181,6 +182,9 @@ const RESEARCH = [
     gauge: () => [Terrain.biomes().forest, `${pct(Terrain.biomes().forest)} forest`] },
   { id: 'wetlands', icon: 'plant', tab: 'landlife', step: 7, requires: ['soil'], needs: [['done', 'lakes'], ['temp', 5]], days: 2, name: 'Wetlands', dnaMult: { ground: 1.5 },
     gauge: () => [clamp01(Terrain.biomes().wetland * 10), `${pct(Terrain.biomes().wetland)} wetland · +${wetlandMethane().toFixed(2)} ppm CH₄/s`] },
+  // Deep roots reach water far down and hold the soil, so the desert edge pulls back.
+  { id: 'roots', icon: 'plant', tab: 'landlife', step: 7, requires: ['grass'], needs: [['desert', 25], ['plants', 2]], days: 3, name: 'Deep Roots',
+    gauge: () => [1 - Terrain.biomes().desert, `${pct(Terrain.biomes().desert)} desert`] },
 ];
 const RESEARCH_BY_ID = Object.fromEntries(RESEARCH.map(r => [r.id, r]));
 // The opening: tap the singularity until it bangs, then fly through 9.2 billion years of space
@@ -201,7 +205,9 @@ const IGNITION_DECAY = 0.08;    // ignition lost per second while not tapping
 // The tree of life for this slice. Habitat (domain) decides which step a species needs.
 // dna and o2 are per second at full population. temp is the global mean range (°C) the species can live in.
 // home lists the climate zones a land species lives in (see Terrain.zones); its population can only fill
-// as much as those zones allow, so spreading deserts or ice push it back.
+// as much as those zones allow, so spreading deserts or ice push it back. `plenty` is the share of its zones
+// that holds a full population (default 60%); reef species need far less. `research` must be done before
+// the species can evolve.
 const SPECIES = [
   { id: 'cell', icon: 'cell', domain: 'ocean', name: 'First Cell', desc: 'A blob of chemistry that copies itself.', dna: 0.5, temp: [0, 80] },
   { id: 'cyano', icon: 'cell', domain: 'ocean', parent: 'cell', name: 'Cyanobacteria', desc: 'Turns sunlight into sugar. Oxygen is the waste.', cost: 10, dna: 1, o2: 0.0015, temp: [0, 70] },
@@ -216,6 +222,8 @@ const SPECIES = [
   { id: 'fish', icon: 'fish', domain: 'ocean', parent: 'chordate', name: 'Fish', desc: 'Fins, gills and a backbone.', cost: 2000, dna: 12, temp: [4, 34] },
   { id: 'shark', icon: 'fish', domain: 'ocean', parent: 'fish', name: 'Sharks', desc: 'Older than trees. Still hungry.', cost: 5000, dna: 25, temp: [6, 36] },
   { id: 'lobefin', icon: 'fish', domain: 'ocean', parent: 'fish', name: 'Lobe-finned Fish', desc: 'Fins that look suspiciously like legs.', cost: 6000, dna: 25, temp: [6, 34] },
+  { id: 'coral', icon: 'coral', domain: 'ocean', parent: 'jelly', research: 'shallows', name: 'Corals', desc: 'Tiny animals that build stone gardens.', cost: 3000, dna: 20, temp: [8, 30], home: ['reef'], plenty: 0.03 },
+  { id: 'reeffish', icon: 'reeffish', domain: 'ocean', parent: 'fish', research: 'shallows', name: 'Reef Fish', desc: 'Bright colors, small territories.', cost: 8000, dna: 35, temp: [8, 32], home: ['reef'], plenty: 0.03 },
   { id: 'moss', icon: 'plant', domain: 'ground', parent: 'algae', name: 'Mosses', desc: 'The first plants on land. Green, soft, damp.', cost: 4000, dna: 15, o2: 0.004, green: 0.25, temp: [2, 34], home: ['wet', 'moist', 'cold'] },
   { id: 'fern', icon: 'plant', domain: 'ground', parent: 'moss', name: 'Ferns', desc: 'Plants with plumbing. They can grow tall.', cost: 10000, dna: 30, o2: 0.006, green: 0.3, temp: [6, 36], home: ['wet'] },
   { id: 'insect', icon: 'bug', domain: 'ground', parent: 'arthropod', name: 'Insects', desc: 'Six legs, endless numbers.', cost: 12000, dna: 40, temp: [8, 38], home: ['wet', 'moist'] },
@@ -439,11 +447,20 @@ function recalc() {
   rates = r;
 }
 
-// How much of a full population the habitat holds (0..1): 60% of the land in its zones is plenty.
+// How much of a full population the habitat holds (0..1): by default 60% of the land in its zones is plenty.
 function habitat(s) {
   if (!s.home) return 1;
   const z = Terrain.zones();
-  return clamp01(s.home.reduce((n, k) => n + z[k], 0) / 0.6);
+  return clamp01(s.home.reduce((n, k) => n + z[k], 0) / (s.plenty || 0.6));
+}
+
+// Why a living species grows or shrinks, in a few words.
+function lifeState(s) {
+  const p = pop(s.id), room = habitat(s), c = tempC();
+  if (fitness(s, c) < 0) return c > s.temp[1] ? 'too hot' : 'too cold';
+  if (p > room + 0.01) return room < 0.01 ? 'no home left' : 'losing its home';
+  if (p < room - 0.02) return 'spreading';
+  return 'thriving';
 }
 
 // How well a species fits the current temperature: 1 inside its range, negative outside.
@@ -579,7 +596,7 @@ function speciesStatus(s) {
   if (isExtinct(s.id)) return 'extinct';
   if (evolved(s.id)) return 'alive';
   if (isBlocked(s)) return 'blocked';
-  if (evolved(s.parent) && parentReady(s) && state.step >= DOMAIN_STEP[s.domain]) return 'available';
+  if (evolved(s.parent) && parentReady(s) && opened(s) && state.step >= DOMAIN_STEP[s.domain]) return 'available';
   return 'waiting';
 }
 
@@ -680,7 +697,7 @@ function tabEntries(tab) {
   for (const u of RESEARCH) if (u.tab === tab && !has(u.id) && researchVisible(u)) entries.push({ kind: 'research', item: u });
   for (const s of SPECIES) {
     if (speciesTab(s) !== tab) continue;
-    const reachable = s.parent && state.step >= DOMAIN_STEP[s.domain] && (evolved(s.parent) || isExtinct(s.parent));
+    const reachable = s.parent && opened(s) && state.step >= DOMAIN_STEP[s.domain] && (evolved(s.parent) || isExtinct(s.parent));
     if (evolved(s.id) || isExtinct(s.id) || reachable) entries.push({ kind: 'species', item: s });
   }
   return entries;
@@ -757,6 +774,7 @@ function setMeter(root, cls, value, text) {
 }
 
 const parentReady = s => pop(s.parent) >= 0.5;
+const opened = s => !s.research || has(s.research);
 
 function updateTab(tab, root) {
   const note = (cls, text) => {
@@ -854,7 +872,7 @@ function choose(e) {
     if (!canResearch(item)) return;
     state.researching = { id: item.id, done: 0 };
   } else {
-    if (evolved(item.id) || isExtinct(item.id) || state.dna < item.cost || !parentReady(item)) return;
+    if (evolved(item.id) || isExtinct(item.id) || state.dna < item.cost || !parentReady(item) || !opened(item)) return;
     state.dna -= item.cost;
     state.species[item.id] = 0.05;
   }
@@ -934,7 +952,7 @@ const STATUS_TEXT = { alive: 'Alive', extinct: 'Extinct', available: 'Evolve', w
 // Why a species cannot evolve yet, in a few words.
 function waitReason(s) {
   if (!evolved(s.parent)) return `after ${SPECIES_BY_ID[s.parent].name}`;
-  if (state.step < DOMAIN_STEP[s.domain]) return '???';
+  if (state.step < DOMAIN_STEP[s.domain] || !opened(s)) return '???';
   if (!parentReady(s)) return `${SPECIES_BY_ID[s.parent].name} at 50%`;
   return `${fmt(s.cost)} DNA`;
 }
@@ -1111,6 +1129,13 @@ Scene.onBangTap(() => {
 });
 
 // Tapping a glowing volcano on the planet makes it erupt.
+// Tapping a critter on the map tells how its species is doing.
+Scene.onCritterTap((id, x, y) => {
+  const s = SPECIES_BY_ID[id];
+  floatText(x, y - 10, `${s.name}: ${lifeState(s)}`, `critter ${lifeState(s) === 'thriving' || lifeState(s) === 'spreading' ? 'good' : 'bad'}`);
+  buzz(6);
+});
+
 Scene.onVolcanoTap(i => {
   erupt(i);
   buzz([20, 30, 20]);
@@ -1321,7 +1346,7 @@ function updateScene(c) {
     peaks: has('collision') ? Math.max(1, Math.round(state.mountains * 8)) : 0,
     snow: glacierIce() > 0.05, rivers: has('rivers'), lakes: has('lakes'), frozen: tempC() < 0,
     temp: Math.round(tempC()), rain: has('rain') ? Math.round(state.clouds * 20) / 20 : 0,
-    grass: has('grass'), forests: has('forests'), wetlands: has('wetlands'), reefs: has('shallows'),
+    grass: has('grass'), forests: has('forests'), wetlands: has('wetlands'), reefs: has('shallows'), roots: has('roots'),
   });
   const storms = state.step >= 4 ? Math.min(3, 1 + Math.floor((state.clouds - STORM_CLOUDS) * 10)) : 0;
   Scene.setClouds(has('clouds') ? state.clouds : 0, Math.max(0, storms));
